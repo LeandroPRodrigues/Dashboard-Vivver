@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "html2pdf.js": "^0.12.1",
+    "lucide-react": "^0.555.0",
+    "recharts": "^3.5.1",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}

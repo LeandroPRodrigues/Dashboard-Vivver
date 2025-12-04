@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.nao-cortar {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  break-before: auto;
+  break-after: auto;
+  display: block; /* Ajuda o PDF a entender onde começa e termina */
+  position: relative;
+}
+
+/* Força a tabela a se comportar bem */
+tr.nao-cortar {
+  display: table-row; /* Tabela precisa ser table-row, não block */
+}
