@@ -4,9 +4,11 @@ import {
   LineChart, Line, Cell, ComposedChart 
 } from 'recharts';
 import { 
-  Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle 
+  Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle, 
+  FileDown, Image as ImageIcon, FileSpreadsheet // <--- ÍCONES NOVOS ADICIONADOS AQUI
 } from 'lucide-react';
-//import html2pdf from 'html2pdf.js';
+import html2canvas from 'html2canvas'; // <--- NOVA LINHA
+import * as XLSX from 'xlsx'; // <--- NOVA LINHA
 
 // --- Constantes e Helpers ---
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
@@ -194,6 +196,109 @@ const generateMockData = () => {
   }
   return mock;
 };
+
+
+// Exportar Imagem (PNG)
+const exportAsImage = async (elementId, fileName) => {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  
+  try {
+    const canvas = await html2canvas(element, { backgroundColor: '#ffffff' });
+    const image = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.href = image;
+    link.download = `${fileName}.png`;
+    link.click();
+  } catch (error) {
+    console.error("Erro ao exportar imagem:", error);
+  }
+};
+
+// Exportar Excel (XLSX)
+const exportAsExcel = (data, fileName) => {
+  try {
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Dados");
+    XLSX.writeFile(workbook, `${fileName}.xlsx`);
+  } catch (error) {
+    console.error("Erro ao exportar excel:", error);
+  }
+};
+
+// Componente do Botão de Exportação (Menu Sutil)
+const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  // Fecha o menu se clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleImageClick = () => {
+    exportAsImage(targetId, fileName);
+    setIsOpen(false);
+  };
+
+  const handleExcelClick = () => {
+    if (dataForExcel) exportAsExcel(dataForExcel, fileName);
+    setIsOpen(false);
+  };
+
+  // Se NÃO tiver dados de Excel (é só gráfico), mostra botão simples de download direto
+  if (!dataForExcel) {
+    return (
+      <button 
+        onClick={handleImageClick}
+        title="Baixar Imagem"
+        className="text-slate-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-slate-100"
+      >
+        <FileDown size={18} />
+      </button>
+    );
+  }
+
+  // Se tiver Excel (é tabela), mostra menu com opções
+  return (
+    <div className="relative inline-block" ref={menuRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        title="Opções de Exportação"
+        className={`text-slate-400 hover:text-blue-600 transition-colors p-1 rounded hover:bg-slate-100 ${isOpen ? 'text-blue-600 bg-slate-50' : ''}`}
+      >
+        <FileDown size={18} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-slate-100 z-50 py-1 animate-in fade-in zoom-in-95 duration-200">
+          <button 
+            onClick={handleImageClick}
+            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+          >
+            <ImageIcon size={14} className="text-purple-500"/> Baixar Imagem (PNG)
+          </button>
+          <button 
+            onClick={handleExcelClick}
+            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+          >
+            <FileSpreadsheet size={14} className="text-green-500"/> Baixar Excel (XLSX)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
 
 export default function Dashboard() {
   const [rawData, setRawData] = useState([]);
@@ -669,12 +774,18 @@ export default function Dashboard() {
 
         {/* Gráficos Linha 1 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <Card className="p-6">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-              <Calendar size={20} className="text-slate-400" />
-              Evolução Mensal {selectedMonth !== 'all' && `(${MONTH_NAMES[selectedMonth-1]})`}
-            </h3>
-            <div className="h-80 w-full">
+        <Card className="p-6">
+            <div className="flex justify-between items-start mb-6">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Calendar size={20} className="text-slate-400" />
+                Evolução Mensal {selectedMonth !== 'all' && `(${MONTH_NAMES[selectedMonth-1]})`}
+              </h3>
+              {/* Botão Exportar Adicionado */}
+              <ExportWidget targetId="chart-evolucao" fileName="evolucao_mensal" />
+            </div>
+            
+            {/* ID Adicionado aqui nesta div */}
+            <div id="chart-evolucao" className="h-80 w-full bg-white p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -688,11 +799,17 @@ export default function Dashboard() {
           </Card>
 
           <Card className="p-6">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-              <Stethoscope size={20} className="text-slate-400" />
-              Volume por Especialidade
-            </h3>
-            <div className="h-80 w-full">
+            <div className="flex justify-between items-start mb-6">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Stethoscope size={20} className="text-slate-400" />
+                Volume por Especialidade
+              </h3>
+              {/* Botão Exportar Adicionado */}
+              <ExportWidget targetId="chart-specs" fileName="volume_especialidade" />
+            </div>
+            
+            {/* ID Adicionado aqui */}
+            <div id="chart-specs" className="h-80 w-full bg-white p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
@@ -735,34 +852,42 @@ export default function Dashboard() {
         )}
 
         {/* --- TABELA: VOLUME VS DIAS TRABALHADOS --- */}
-        <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
-          <div className="p-6 pb-4 bg-white">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <Table size={20} className="text-slate-400" />
-              Tabela de Produtividade por Profissional
-            </h3>
-            <p className="text-sm text-slate-500 mt-1">Detalhamento de dias trabalhados e produtividade diária</p>
+{/* --- TABELA: VOLUME VS DIAS TRABALHADOS --- */}
+<Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
+          <div className="p-6 pb-4 bg-white flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Table size={20} className="text-slate-400" />
+                Tabela de Produtividade por Profissional
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">Detalhamento de dias trabalhados e produtividade diária</p>
+            </div>
+
+            {/* AQUI ESTÁ A MÁGICA: Passamos os dados para o Excel também */}
+            <ExportWidget 
+              targetId="table-produtividade" 
+              fileName="tabela_produtividade" 
+              dataForExcel={stats.allProfs} 
+            />
           </div>
           
           <div className="overflow-x-auto">
-            <div className="max-h-96 overflow-y-auto">
+            {/* ID Adicionado aqui no container de rolagem */}
+            <div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white">
               <table className="w-full text-sm text-left text-slate-600">
+                {/* ... (O CONTEÚDO DA SUA TABELA PERMANECE IGUAL DAQUI PARA BAIXO) ... */}
                 <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-3 font-bold border-b border-slate-200">Profissional</th>
                     <th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Dias Trab.</th>
                     <th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Média/Dia</th>
                     
-                    {/* Colunas Condicionais baseadas na Unidade */}
                     {activeUnit === '104' ? (
                       <>
                         <th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-blue-50 text-blue-800">1º Atend.</th>
                         <th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-amber-50 text-amber-800">Observação</th>
                       </>
-                    ) : (
-                        // Para o Ambulatório (51), não mostra detalhamento, apenas total
-                        null
-                    )}
+                    ) : null}
                     
                     <th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total Geral</th>
                   </tr>
