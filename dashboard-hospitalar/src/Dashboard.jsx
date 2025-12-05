@@ -512,13 +512,13 @@ export default function Dashboard() {
             </button>
   */}
             <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
-             {/*
+             
               <label className="flex flex-1 justify-center items-center gap-2 cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-md transition-colors font-medium text-sm">
                 <Upload size={18} />
                 {isLoading ? 'Processando...' : 'Carregar CSV'}
                 <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
               </label>
-*/}
+
               {isDemoData && (
                 <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded whitespace-nowrap">
                   <AlertCircle size={14} />
