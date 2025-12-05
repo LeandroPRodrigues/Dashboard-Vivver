@@ -5,10 +5,10 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle, 
-  FileDown, Image as ImageIcon, FileSpreadsheet // <--- ÍCONES NOVOS ADICIONADOS AQUI
+  FileDown, Image as ImageIcon, FileSpreadsheet 
 } from 'lucide-react';
-import html2canvas from 'html2canvas'; // <--- NOVA LINHA
-import * as XLSX from 'xlsx'; // <--- NOVA LINHA
+import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 
 // --- Constantes e Helpers ---
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
@@ -25,13 +25,16 @@ const HOSPITAL_PROCEDURE_MAP = {
   '9990000096': 'Pacientes em observação'
 };
 
-// --- Função Avançada de Correção de Codificação ---
+// --- Função Avançada de Correção de Codificação (ATUALIZADA) ---
 const fixEncoding = (str) => {
   if (!str) return "";
   try {
+    // Tenta decodificar UTF-8 lido como Latin-1
     return decodeURIComponent(escape(str));
   } catch (e) {
+    // Fallback manual para casos comuns (Minúsculas e Maiúsculas)
     return str
+      // Minúsculas
       .replace(/Ã©/g, "é")
       .replace(/Ã¡/g, "á")
       .replace(/Ã£/g, "ã")
@@ -43,11 +46,22 @@ const fixEncoding = (str) => {
       .replace(/Ã­/g, "í")
       .replace(/Ã\xad/g, "í") 
       .replace(/Ã /g, "à")
+      .replace(/Ã¢/g, "â")
+      .replace(/Ã¶/g, "ö")
+      // Maiúsculas (Adicionado Agora)
       .replace(/Ã‰/g, "É")
       .replace(/Ãƒ/g, "Ã")
-      .replace(/Ã¢/g, "â")
       .replace(/Ã…/g, "Å")
-      .replace(/Ã¶/g, "ö");
+      .replace(/Ã“/g, "Ó")
+      .replace(/Ã”/g, "Ô")
+      .replace(/Ã•/g, "Õ")
+      .replace(/Ã‚/g, "Â")
+      .replace(/Ã€/g, "À")
+      .replace(/Ã /g, "À") // Variação comum
+      .replace(/Ã/g, "Á")
+      .replace(/Ã‡/g, "Ç")
+      .replace(/Ãš/g, "Ú")
+      .replace(/ÃÍ/g, "Í");
   }
 };
 
@@ -59,13 +73,14 @@ const Card = ({ children, className = "" }) => (
   </div>
 );
 
+// Botão atualizado: Menor e mais organizado (px-3 py-1.5 e text-xs/sm)
 const Button = ({ children, onClick, active, className = "" }) => (
   <button
     onClick={onClick}
-    className={`px-4 py-2 rounded-md font-medium transition-colors text-sm md:text-base print:hidden ${
+    className={`px-3 py-1.5 rounded-md font-medium transition-colors text-xs md:text-sm print:hidden border shadow-sm ${
       active 
-        ? 'bg-blue-600 text-white shadow-md' 
-        : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+        ? 'bg-blue-600 text-white border-blue-600' 
+        : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200 hover:border-blue-300'
     } ${className}`}
   >
     {children}
@@ -163,6 +178,7 @@ const generateMockData = () => {
   const profs51 = ['Dr. Carlos Souza', 'Dra. Fernanda Lima', 'Dr. Roberto Almeida', 'Dra. Juliana Martins'];
   const procs51 = ['Consulta Eletiva', 'Eletrocardiograma', 'Retorno', 'Exame Fundo de Olho'];
 
+  // Unidade 104 (Hospital)
   for(let i=0; i<300; i++) {
     const code = procs104Codes[Math.floor(Math.random() * procs104Codes.length)];
     const day = Math.floor(Math.random() * 28) + 1;
@@ -179,6 +195,7 @@ const generateMockData = () => {
       nome_procedimento: "PROCEDIMENTO ORIGINAL CSV", 
     });
   }
+  // Unidade 51 (Ambulatório)
   for(let i=0; i<200; i++) {
     const day = Math.floor(Math.random() * 28) + 1;
     const month = Math.floor(Math.random() * 12) + 1;
@@ -194,11 +211,26 @@ const generateMockData = () => {
       nome_procedimento: procs51[Math.floor(Math.random() * procs51.length)],
     });
   }
+  // NOVA UNIDADE 99 (Posto de Saúde - Para testar abas dinâmicas)
+  for(let i=0; i<150; i++) {
+    const day = Math.floor(Math.random() * 28) + 1;
+    const month = Math.floor(Math.random() * 12) + 1;
+    mock.push({
+      codigo_unidade: "99",
+      nome_unidade: "UBS POSTO CENTRAL",
+      mes: month,
+      ano: "2024",
+      data_atendimento: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/2024`,
+      nome_especialidade: "Clínico Geral",
+      nome_profissional: "Dr. Generico",
+      codigo_procedimento: "0000000",
+      nome_procedimento: "Consulta Básica",
+    });
+  }
   return mock;
 };
 
-
-// Exportar Imagem (PNG)
+// --- Funções de Exportação ---
 const exportAsImage = async (elementId, fileName) => {
   const element = document.getElementById(elementId);
   if (!element) return;
@@ -215,7 +247,6 @@ const exportAsImage = async (elementId, fileName) => {
   }
 };
 
-// Exportar Excel (XLSX)
 const exportAsExcel = (data, fileName) => {
   try {
     const worksheet = XLSX.utils.json_to_sheet(data);
@@ -227,12 +258,10 @@ const exportAsExcel = (data, fileName) => {
   }
 };
 
-// Componente do Botão de Exportação (Menu Sutil)
 const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
 
-  // Fecha o menu se clicar fora
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
@@ -253,7 +282,6 @@ const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
     setIsOpen(false);
   };
 
-  // Se NÃO tiver dados de Excel (é só gráfico), mostra botão simples de download direto
   if (!dataForExcel) {
     return (
       <button 
@@ -266,7 +294,6 @@ const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
     );
   }
 
-  // Se tiver Excel (é tabela), mostra menu com opções
   return (
     <div className="relative inline-block" ref={menuRef}>
       <button 
@@ -298,11 +325,9 @@ const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
 };
 
 
-
-
 export default function Dashboard() {
   const [rawData, setRawData] = useState([]);
-  const [activeUnit, setActiveUnit] = useState('104'); 
+  const [activeUnit, setActiveUnit] = useState(''); // Começa vazio, calculado automaticamente
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(true);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -318,71 +343,56 @@ export default function Dashboard() {
     setRawData(generateMockData());
   }, []);
 
+  // --- DETECTAR UNIDADES DISPONÍVEIS ---
+  const availableUnits = useMemo(() => {
+    const unitsMap = new Map();
+    
+    rawData.forEach(item => {
+      let code = String(item.codigo_unidade || "").trim();
+      let name = item.nome_unidade || `Unidade ${code}`;
+      
+      // Aplicar correção de encoding no nome da unidade também!
+      name = fixEncoding(name);
+
+      if (code && code !== "undefined" && code !== "null" && !unitsMap.has(code)) {
+        unitsMap.set(code, name);
+      }
+    });
+
+    // Se estiver vazio e for demo, garante defaults
+    if (isDemoData && unitsMap.size === 0) {
+        return [
+            { code: '104', name: 'HOSPITAL RAYMUNDO CAMPOS' },
+            { code: '51', name: 'CENTRO DE ESPECIALIDADES' }
+        ];
+    }
+
+    // Retorna ordenado (104 primeiro, depois alfabético)
+    return Array.from(unitsMap.entries())
+      .map(([code, name]) => ({ code, name }))
+      .sort((a, b) => {
+         if (a.code === '104') return -1;
+         if (b.code === '104') return 1;
+         return a.name.localeCompare(b.name);
+      });
+  }, [rawData, isDemoData]);
+
+  // --- SELECIONAR UNIDADE PADRÃO ---
+  useEffect(() => {
+    if (availableUnits.length > 0) {
+      // Se a unidade ativa atual não existe na lista (ou está vazia), pega a primeira
+      const currentExists = availableUnits.find(u => u.code === activeUnit);
+      if (!currentExists) {
+        setActiveUnit(availableUnits[0].code);
+      }
+    }
+  }, [availableUnits]);
+
   useEffect(() => {
     setSelectedSpecs([]);
     setSelectedProcs([]);
     setSelectedProfs([]);
   }, [activeUnit]);
-
-  // Função de Download de PDF
-// Função de Download de PDF (Melhorada)
-/*const handleDownloadPDF = async () => {
-  const element = document.getElementById('dashboard-content');
-  
-  if (!element) return;
-
-  setIsGeneratingPdf(true);
-
-  // --- TRUQUE: Forçar Modo Desktop ---
-  // Salvamos o estilo original para restaurar depois
-  const originalStyle = element.style.cssText;
-  const originalClass = element.className;
-
-  // Forçamos o elemento a ter largura fixa de PC (1300px)
-  // Isso obriga os gráficos a ficarem lado a lado (3 colunas) em vez de empilhados
-  element.style.width = '1300px';
-  element.style.maxWidth = '1300px';
-  element.style.margin = '0 auto'; // Centraliza
-  element.style.backgroundColor = '#f8fafc'; // Garante fundo cinza
-  
-  // Pequeno atraso para o navegador redesenhar o layout largo
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  const opt = {
-    margin: [5, 5, 5, 5],
-    filename: `Relatorio_Vivver_${activeUnit === '104' ? 'Hospital' : 'Ambulatorio'}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { 
-      scale: 2, // Melhora qualidade
-      useCORS: true, 
-      scrollY: 0,
-      windowWidth: 1300, // Diz para a "câmera" que a tela tem 1300px
-      width: 1300
-    },
-    // Usamos paisagem (landscape) para caber melhor os 3 gráficos lado a lado
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-    
-    // Respeita a classe .nao-cortar que criamos no CSS
-    pagebreak: { mode: 'css' }
-  };
-
-  html2pdf()
-    .set(opt)
-    .from(element)
-    .save()
-    .then(() => {
-      // --- RESTAURAÇÃO ---
-      // Devolve o site ao estado responsivo normal
-      element.style.cssText = originalStyle;
-      element.className = originalClass;
-      setIsGeneratingPdf(false);
-    })
-    .catch((err) => {
-      console.error(err);
-      element.style.cssText = originalStyle; // Restaura mesmo se der erro
-      setIsGeneratingPdf(false);
-    });
-};*/
 
   // Função de Upload
   const handleFileUpload = (event) => {
@@ -429,15 +439,12 @@ export default function Dashboard() {
             }
           });
 
-          // Processar Ano
           let ano = rowObj['ano'];
           if (!ano && rowObj['data_atendimento']) {
              const parts = rowObj['data_atendimento'].split('/');
              if (parts.length === 3) ano = parts[2];
           }
           rowObj['ano_final'] = ano ? String(ano).trim() : 'N/A';
-
-          // Processar Mês
           rowObj['mes_final'] = parseInt(rowObj['mes']) || 0;
 
           parsedData.push(rowObj);
@@ -457,7 +464,7 @@ export default function Dashboard() {
     };
   };
 
-  // Processamento de Dados
+  // Processamento de Dados (DINÂMICO)
   const unitData = useMemo(() => {
     return rawData
       .filter(item => String(item.codigo_unidade || "").trim() === activeUnit)
@@ -466,6 +473,7 @@ export default function Dashboard() {
         const codProc = String(item.codigo_procedimento || "").trim();
         const nomeProc = (item.nome_procedimento || "").toUpperCase();
 
+        // SE FOR 104 = HOSPITAL. QUALQUER OUTRO = AMBULATÓRIO/GENÉRICO
         if (activeUnit === '104') {
           if (HOSPITAL_PROCEDURE_MAP[codProc]) {
             newItem.display_procedure = HOSPITAL_PROCEDURE_MAP[codProc];
@@ -474,7 +482,7 @@ export default function Dashboard() {
             newItem.isValid = false; 
           }
         } else {
-          // --- Ambulatório ---
+          // Lógica Genérica para Todas as Outras Unidades
           if (nomeProc.includes("ELETROCARDIOGRAMA")) {
              newItem.isValid = false;
           } else {
@@ -549,7 +557,7 @@ export default function Dashboard() {
           byProfObj[prof] = { name: prof, total: 0, days: new Set() };
       }
       
-      // Contagem para colunas específicas (Hospital)
+      // Contagem Específica apenas para Hospital 104
       if (activeUnit === '104') {
           byProfObj[prof][procType] = (byProfObj[prof][procType] || 0) + 1;
       }
@@ -601,23 +609,15 @@ export default function Dashboard() {
               <Activity className="text-blue-600" />
               Painel de Gestão Hospitalar
             </h1>
-            <p className="text-slate-500 mt-1">Relatório de atendimentos e produtividade - {activeUnit === '104' ? 'Hospital' : 'Ambulatório'}</p>
+            <p className="text-slate-500 mt-1">
+              {/* NOME DA UNIDADE DINÂMICO */}
+              Relatório de atendimentos - {availableUnits.find(u => u.code === activeUnit)?.name || `Unidade ${activeUnit}`}
+            </p>
           </div>
           
-          {/* Botões de Ação - IGNORADOS NO PDF */}
+          {/* Botões de Ação */}
           <div className="flex items-center gap-3 w-full lg:w-auto" data-html2canvas-ignore="true">
-            {/*
-            <button
-               onClick={handleDownloadPDF}
-               disabled={isGeneratingPdf}
-               className="flex items-center gap-2 bg-slate-800 text-white hover:bg-slate-900 px-4 py-2 rounded-md transition-colors font-medium shadow-md disabled:opacity-50"
-            >
-              {isGeneratingPdf ? <Clock className="animate-spin" size={18} /> : <Download size={18} />}
-              {isGeneratingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
-            </button>
-  */}
             <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
-             
               <label className="flex flex-1 justify-center items-center gap-2 cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-md transition-colors font-medium text-sm">
                 <Upload size={18} />
                 {isLoading ? 'Processando...' : 'Carregar CSV'}
@@ -634,24 +634,28 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* --- BARRA DE CONTROLE - IGNORADA NO PDF --- */}
+        {/* --- BARRA DE CONTROLE (BOTÕES DE UNIDADE DINÂMICOS) --- */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col gap-4" data-html2canvas-ignore="true">
           
           <div className="flex flex-wrap gap-2 pb-4 border-b border-slate-100">
-            <Button 
-              active={activeUnit === '104'} 
-              onClick={() => setActiveUnit('104')}
-              className="flex items-center gap-2"
-            >
-              🏥 Hospital (104)
-            </Button>
-            <Button 
-              active={activeUnit === '51'} 
-              onClick={() => setActiveUnit('51')}
-              className="flex items-center gap-2"
-            >
-              🩺 Ambulatório (51)
-            </Button>
+            {availableUnits.map((unit) => (
+              <Button 
+                key={unit.code}
+                active={activeUnit === unit.code} 
+                onClick={() => setActiveUnit(unit.code)}
+                className="flex items-center gap-2"
+              >
+                {/* Ícone muda: Hospital (104) ganha ícone de prédio, outros ganham estetoscópio */}
+                {unit.code === '104' ? '🏥' : '🩺'} 
+                <span className="truncate max-w-[150px] md:max-w-none" title={unit.name}>
+                  {unit.name.replace('HOSPITAL', 'Hosp.').replace('CENTRO DE ESPECIALIDADES', 'C. Esp.')} ({unit.code})
+                </span>
+              </Button>
+            ))}
+            
+            {availableUnits.length === 0 && (
+               <span className="text-sm text-slate-400 italic py-2">Nenhuma unidade encontrada</span>
+            )}
           </div>
 
           <div className="flex flex-col md:flex-row gap-4 flex-wrap">
@@ -708,7 +712,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Resumo de Filtros (Visível sempre para constar no PDF) */}
+        {/* Resumo de Filtros */}
         <div className="mb-6 p-3 border border-slate-200 rounded text-sm bg-blue-50/50 flex flex-wrap gap-4">
             <span className="font-bold text-slate-700">Filtros Aplicados:</span>
             <span>Ano: <strong>{selectedYear === 'all' ? 'Todos' : selectedYear}</strong></span>
@@ -732,7 +736,7 @@ export default function Dashboard() {
             {activeUnit === '104' && stats.total > 0 && (
                 <p className="text-xs text-slate-400 mt-2">Filtrado por: Primeiro Atendimento e Obs.</p>
             )}
-            {activeUnit === '51' && (
+            {activeUnit !== '104' && (
                 <p className="text-xs text-slate-400 mt-2">Excluindo Eletrocardiograma</p>
             )}
           </Card>
@@ -780,11 +784,9 @@ export default function Dashboard() {
                 <Calendar size={20} className="text-slate-400" />
                 Evolução Mensal {selectedMonth !== 'all' && `(${MONTH_NAMES[selectedMonth-1]})`}
               </h3>
-              {/* Botão Exportar Adicionado */}
               <ExportWidget targetId="chart-evolucao" fileName="evolucao_mensal" />
             </div>
             
-            {/* ID Adicionado aqui nesta div */}
             <div id="chart-evolucao" className="h-80 w-full bg-white p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
@@ -804,11 +806,9 @@ export default function Dashboard() {
                 <Stethoscope size={20} className="text-slate-400" />
                 Volume por Especialidade
               </h3>
-              {/* Botão Exportar Adicionado */}
               <ExportWidget targetId="chart-specs" fileName="volume_especialidade" />
             </div>
             
-            {/* ID Adicionado aqui */}
             <div id="chart-specs" className="h-80 w-full bg-white p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
@@ -852,8 +852,7 @@ export default function Dashboard() {
         )}
 
         {/* --- TABELA: VOLUME VS DIAS TRABALHADOS --- */}
-{/* --- TABELA: VOLUME VS DIAS TRABALHADOS --- */}
-<Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
+        <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
           <div className="p-6 pb-4 bg-white flex justify-between items-center">
             <div>
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -863,7 +862,6 @@ export default function Dashboard() {
               <p className="text-sm text-slate-500 mt-1">Detalhamento de dias trabalhados e produtividade diária</p>
             </div>
 
-            {/* AQUI ESTÁ A MÁGICA: Passamos os dados para o Excel também */}
             <ExportWidget 
               targetId="table-produtividade" 
               fileName="tabela_produtividade" 
@@ -872,10 +870,8 @@ export default function Dashboard() {
           </div>
           
           <div className="overflow-x-auto">
-            {/* ID Adicionado aqui no container de rolagem */}
             <div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white">
               <table className="w-full text-sm text-left text-slate-600">
-                {/* ... (O CONTEÚDO DA SUA TABELA PERMANECE IGUAL DAQUI PARA BAIXO) ... */}
                 <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-3 font-bold border-b border-slate-200">Profissional</th>
