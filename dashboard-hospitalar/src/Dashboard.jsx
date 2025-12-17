@@ -14,13 +14,11 @@ import * as XLSX from 'xlsx';
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-// Mapeamento de Códigos para Hospital (Unidade 104)
 const HOSPITAL_PROCEDURE_MAP = {
   '301060096': 'Primeiro atendimento', '0301060096': 'Primeiro atendimento', '9999999984': 'Primeiro atendimento', 
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
 
-// --- DICIONÁRIO INTELIGENTE DE COLUNAS ---
 const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade'],
@@ -108,7 +106,6 @@ const generateMockData = () => {
   const mock = [];
   const specs = ['Clínico Geral', 'Pediatria', 'Ortopedia', 'Cardiologia', 'Dermatologia'];
   const cities = ['OURO BRANCO - MG', 'CONGONHAS - MG', 'CONSELHEIRO LAFAIETE - MG', 'BELO HORIZONTE - MG', 'JECEABA - MG'];
-  
   ['2024', '2025'].forEach(year => {
     // Gerar Ouro Branco Massivo
     for(let i=0; i<1200; i++) {
@@ -133,7 +130,7 @@ const generateMockData = () => {
           date: `15/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
           prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
           procName: "PROCEDIMENTO HOSPITALAR",
-          city: cities[Math.floor(Math.random() * (cities.length - 1)) + 1], // Pega cidades exceto a primeira (Ouro branco na logica acima foi separado)
+          city: cities[Math.floor(Math.random() * (cities.length - 1)) + 1],
           age: age,
           ageGroup: age < 12 ? 'Criança (0-12)' : age < 18 ? 'Adolescente (13-18)' : age < 60 ? 'Adulto (19-59)' : 'Idoso (60+)'
         });
@@ -192,9 +189,6 @@ export default function Dashboard() {
   const [isDemoData, setIsDemoData] = useState(true);
   const [isComparisonMode, setIsComparisonMode] = useState(false);
   
-  // Estado para Escala Logarítmica do gráfico de Cidades
-  const [isLogScale, setIsLogScale] = useState(false);
-
   // Filtros
   const [selectedYear, setSelectedYear] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('all');
@@ -227,15 +221,13 @@ export default function Dashboard() {
   useEffect(() => { if (availableUnits.length > 0 && !availableUnits.find(u => u.code === activeUnit)) setActiveUnit(availableUnits[0].code); }, [availableUnits]);
   useEffect(() => { if (availableYears.length >= 1) { setSelectedYear(availableYears[0]); setCompYear1(availableYears[0]); setCompYear2(availableYears[1] || availableYears[0]); } }, [availableYears]);
 
-  // --- DRILL-DOWN HANDLER (CORRIGIDO) ---
+  // --- DRILL-DOWN HANDLER ---
   const handleSpecChartClick = (data) => {
     if (data && data.name) {
       if (selectedSpecs.length === 1 && selectedSpecs.includes(data.name)) {
-        // Se já está filtrado SÓ por ele, limpa
-        setSelectedSpecs([]);
+        setSelectedSpecs([]); // Limpa se já estiver selecionado
       } else {
-        // Caso contrário, define ele como único filtro
-        setSelectedSpecs([data.name]);
+        setSelectedSpecs([data.name]); // Seleciona se não estiver
       }
     }
   };
@@ -292,7 +284,7 @@ export default function Dashboard() {
     };
   };
 
-  // --- FILTROS & DADOS ---
+  // --- DADOS FILTRADOS (LÓGICA CENTRAL) ---
   const unitData = useMemo(() => {
     return rawData
       .filter(item => String(item.unitCode || "").trim() === activeUnit)
@@ -310,6 +302,30 @@ export default function Dashboard() {
         return newItem;
       }).filter(item => item.isValid); 
   }, [rawData, activeUnit]);
+
+  // --- RANKING PARA CORES FIXAS ---
+  // Calculamos a ordem das especialidades IGNORANDO o filtro de especialidade,
+  // mas respeitando Ano e Mês. Isso garante que a cor 2 seja sempre a cor 2.
+  const specRankMap = useMemo(() => {
+    const counts = {};
+    unitData.forEach(item => {
+        // Aplica filtro de ano/mês se houver
+        if (selectedYear !== 'all' && String(item.ano_final) !== selectedYear) return;
+        if (selectedMonth !== 'all' && String(item.mes_final) !== selectedMonth) return;
+        
+        const s = item.spec || "Não informado";
+        counts[s] = (counts[s] || 0) + 1;
+    });
+    // Retorna array de nomes ordenado por volume
+    const sortedSpecs = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
+    return sortedSpecs;
+  }, [unitData, selectedYear, selectedMonth]);
+
+  const getSpecColor = (specName) => {
+    const idx = specRankMap.indexOf(specName);
+    if (idx === -1) return '#cbd5e1'; // Cinza se não achar
+    return COLORS[idx % COLORS.length];
+  };
 
   const filterOptions = useMemo(() => {
     const specs = new Set(); const procs = new Set(); const profs = new Set();
@@ -359,8 +375,12 @@ export default function Dashboard() {
     });
 
     const byMonth = Object.keys(byMonthObj).map(m => ({ name: MONTH_NAMES[parseInt(m)-1], index: parseInt(m), value: byMonthObj[m] })).sort((a, b) => a.index - b.index);
+    // Ordenar specs pelo valor atual, mas a cor virá do specRankMap
     const bySpec = Object.keys(bySpecObj).map(k => ({ name: k, value: bySpecObj[k] })).sort((a, b) => b.value - a.value);
-    const byCity = Object.keys(byCityObj).map(k => ({ name: k, value: byCityObj[k] })).sort((a, b) => b.value - a.value).slice(0, 10);
+    
+    // Cidades (Para tabela) - Ordenadas
+    const byCity = Object.keys(byCityObj).map(k => ({ name: k, value: byCityObj[k], percent: ((byCityObj[k]/total)*100).toFixed(1) })).sort((a, b) => b.value - a.value);
+    
     const byAge = Object.keys(byAgeObj).map(k => ({ name: k, value: byAgeObj[k] }));
     
     const allProfs = Object.values(byProfObj).map(p => ({ ...p, daysCount: p.days.size || 1, avgPerDay: Math.round((p.total / (p.days.size || 1)) * 10) / 10 })).sort((a, b) => b.total - a.total);
@@ -384,7 +404,7 @@ export default function Dashboard() {
     allProfs.slice(0, 20).forEach(p => { Object.keys(p).forEach(k => { if (!['name', 'total', 'days', 'daysCount', 'avgPerDay'].includes(k)) profKeys.add(k); }); });
 
     return { total, byMonth, bySpec, byCity, byAge, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
-  }, [filteredData, activeUnit]);
+  }, [filteredData, activeUnit, specRankMap]);
 
   // --- COMPARAÇÃO ---
   const comparisonData = useMemo(() => {
@@ -518,7 +538,14 @@ export default function Dashboard() {
                     </Card>
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade (Clique para Filtrar)</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
-                        <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">{stats.bySpec.slice(0, 10).map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Bar></BarChart></ResponsiveContainer></div>
+                        {/* CORES CORRIGIDAS AQUI - Usando getSpecColor */}
+                        <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">
+                            {stats.bySpec.slice(0, 10).map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={getSpecColor(entry.name)} />
+                            ))}
+                        </Bar>
+                        </BarChart></ResponsiveContainer></div>
                     </Card>
                 </div>
 
@@ -528,34 +555,38 @@ export default function Dashboard() {
                         <div id="chart-age" className="h-64 w-full bg-white p-2">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    <Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" labelLine={false}>
+                                    <Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} fill="#8884d8" label={false}>
                                         {stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                                     </Pie>
-                                    <RechartsTooltip />
-                                    <Legend layout="vertical" verticalAlign="middle" align="right"/>
+                                    <RechartsTooltip formatter={(value, name, props) => [`${value} (${(props.payload.percent * 100).toFixed(0)}%)`, name]} />
+                                    <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
                                 </PieChart>
                             </ResponsiveContainer>
                         </div>
                     </Card>
-                    <Card className="p-6 lg:col-span-2">
-                        <div className="flex justify-between items-start mb-6">
-                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade (Top 10)</h3>
-                            <div className="flex items-center gap-2">
-                                {/* BOTÃO DE ESCALA LOGARITMICA */}
-                                <button onClick={() => setIsLogScale(!isLogScale)} className={`flex items-center gap-1 px-2 py-1 text-xs rounded border ${isLogScale ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-500 border-slate-200'}`} title="Usar escala logarítmica para ver valores pequenos"><Scale size={14}/> {isLogScale ? 'Escala Log' : 'Escala Linear'}</button>
-                                <ExportWidget targetId="chart-city" fileName="top_cidades" />
-                            </div>
+                    {/* TABELA DE CIDADES */}
+                    <Card className="p-0 border-t-4 border-t-blue-400 lg:col-span-2 overflow-hidden">
+                        <div className="p-6 pb-4 bg-white flex justify-between items-center">
+                            <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3><p className="text-sm text-slate-500 mt-1">Origem dos pacientes</p></div>
+                            <ExportWidget targetId="table-city" fileName="tabela_cidades" dataForExcel={stats.byCity} />
                         </div>
-                        <div id="chart-city" className="h-64 w-full bg-white p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart layout="vertical" data={stats.byCity} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                                    <XAxis type="number" hide={false} scale={isLogScale ? 'log' : 'auto'} domain={isLogScale ? ['auto', 'auto'] : [0, 'auto']} tick={{fontSize: 10}} />
-                                    <YAxis dataKey="name" type="category" width={90} tick={{fill: '#475569', fontSize: 10, fontWeight: 500}} interval={0} />
-                                    <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
-                                    <Bar dataKey="value" name="Pacientes" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
+                        <div className="overflow-x-auto">
+                            <div id="table-city" className="max-h-64 overflow-y-auto bg-white px-4 pb-4">
+                                <table className="w-full text-sm text-left text-slate-600">
+                                    <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
+                                        <tr><th className="px-4 py-3 font-bold border-b">Cidade</th><th className="px-4 py-3 font-bold border-b text-right">Pacientes</th><th className="px-4 py-3 font-bold border-b text-right">%</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {stats.byCity.map((city, index) => (
+                                            <tr key={index} className="hover:bg-slate-50">
+                                                <td className="px-4 py-2 font-medium truncate max-w-xs" title={city.name}>{city.name}</td>
+                                                <td className="px-4 py-2 text-right">{city.value.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-right text-slate-400 text-xs">{city.percent}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </Card>
                 </div>
