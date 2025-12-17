@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users
+  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -20,7 +20,7 @@ const HOSPITAL_PROCEDURE_MAP = {
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
 
-// --- DICIONÁRIO INTELIGENTE DE COLUNAS (ATUALIZADO) ---
+// --- DICIONÁRIO INTELIGENTE DE COLUNAS ---
 const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade'],
@@ -29,8 +29,6 @@ const COLUMN_ALIASES = {
   prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico'],
   procCode: ['codigo_procedimento', 'Codigo procedimento', 'Cód. Procedimento'],
   procName: ['nome_procedimento', 'Nome procedimento', 'Procedimento'],
-  
-  // ATUALIZADO COM OS NOMES QUE VOCÊ FORNECEU
   city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente', 'nome_municipio_paciente'], 
   age: ['idade', 'Idade', 'Idade atendimento paciente', 'idade_atendimento_paciente'],
   gender: ['sexo', 'Sexo', 'Genero']
@@ -109,33 +107,36 @@ const MultiSelect = ({ label, options, selectedValues, onChange, placeholder = "
 const generateMockData = () => {
   const mock = [];
   const specs = ['Clínico Geral', 'Pediatria', 'Ortopedia', 'Cardiologia', 'Dermatologia'];
-  const cities = ['Ouro Branco', 'Conselheiro Lafaiete', 'Congonhas', 'Belo Horizonte'];
+  const cities = ['OURO BRANCO - MG', 'CONGONHAS - MG', 'CONSELHEIRO LAFAIETE - MG', 'BELO HORIZONTE - MG', 'JECEABA - MG'];
   
   ['2024', '2025'].forEach(year => {
-    for(let i=0; i<400; i++) {
-      const month = Math.floor(Math.random() * 12) + 1;
-      const age = Math.floor(Math.random() * 80) + 1;
-      mock.push({
-        unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
-        date: `15/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
-        prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
-        procName: "PROCEDIMENTO HOSPITALAR",
-        city: cities[Math.floor(Math.random() * cities.length)],
-        age: age,
-        ageGroup: age < 12 ? 'Criança' : age < 18 ? 'Adolescente' : age < 60 ? 'Adulto' : 'Idoso'
-      });
+    // Gerar Ouro Branco Massivo
+    for(let i=0; i<1200; i++) {
+        const month = Math.floor(Math.random() * 12) + 1;
+        const age = Math.floor(Math.random() * 80) + 1;
+        mock.push({
+          unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
+          date: `15/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
+          prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
+          procName: "PROCEDIMENTO HOSPITALAR",
+          city: "OURO BRANCO - MG",
+          age: age,
+          ageGroup: age < 12 ? 'Criança (0-12)' : age < 18 ? 'Adolescente (13-18)' : age < 60 ? 'Adulto (19-59)' : 'Idoso (60+)'
+        });
     }
-    for(let i=0; i<300; i++) {
-      const month = Math.floor(Math.random() * 12) + 1;
-      const age = Math.floor(Math.random() * 80) + 1;
-      mock.push({
-        unitCode: "51", unitName: "CENTRO DE ESPECIALIDADES", mes_final: month, ano_final: year,
-        date: `20/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
-        prof: `Dra. ${i}`, procCode: "0000000", procName: "Consulta Ambulatorial",
-        city: cities[Math.floor(Math.random() * cities.length)],
-        age: age,
-        ageGroup: age < 12 ? 'Criança' : age < 18 ? 'Adolescente' : age < 60 ? 'Adulto' : 'Idoso'
-      });
+    // Gerar outras cidades menores
+    for(let i=0; i<50; i++) {
+        const month = Math.floor(Math.random() * 12) + 1;
+        const age = Math.floor(Math.random() * 80) + 1;
+        mock.push({
+          unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
+          date: `15/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
+          prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
+          procName: "PROCEDIMENTO HOSPITALAR",
+          city: cities[Math.floor(Math.random() * (cities.length - 1)) + 1], // Pega cidades exceto a primeira (Ouro branco na logica acima foi separado)
+          age: age,
+          ageGroup: age < 12 ? 'Criança (0-12)' : age < 18 ? 'Adolescente (13-18)' : age < 60 ? 'Adulto (19-59)' : 'Idoso (60+)'
+        });
     }
   });
   return mock;
@@ -190,6 +191,9 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(true);
   const [isComparisonMode, setIsComparisonMode] = useState(false);
+  
+  // Estado para Escala Logarítmica do gráfico de Cidades
+  const [isLogScale, setIsLogScale] = useState(false);
 
   // Filtros
   const [selectedYear, setSelectedYear] = useState('all');
@@ -223,13 +227,14 @@ export default function Dashboard() {
   useEffect(() => { if (availableUnits.length > 0 && !availableUnits.find(u => u.code === activeUnit)) setActiveUnit(availableUnits[0].code); }, [availableUnits]);
   useEffect(() => { if (availableYears.length >= 1) { setSelectedYear(availableYears[0]); setCompYear1(availableYears[0]); setCompYear2(availableYears[1] || availableYears[0]); } }, [availableYears]);
 
-  // --- DRILL-DOWN HANDLER ---
+  // --- DRILL-DOWN HANDLER (CORRIGIDO) ---
   const handleSpecChartClick = (data) => {
     if (data && data.name) {
-      // Se já estiver selecionado, remove. Se não, seleciona.
-      if (selectedSpecs.includes(data.name)) {
-        setSelectedSpecs(prev => prev.filter(s => s !== data.name));
+      if (selectedSpecs.length === 1 && selectedSpecs.includes(data.name)) {
+        // Se já está filtrado SÓ por ele, limpa
+        setSelectedSpecs([]);
       } else {
+        // Caso contrário, define ele como único filtro
         setSelectedSpecs([data.name]);
       }
     }
@@ -360,7 +365,6 @@ export default function Dashboard() {
     
     const allProfs = Object.values(byProfObj).map(p => ({ ...p, daysCount: p.days.size || 1, avgPerDay: Math.round((p.total / (p.days.size || 1)) * 10) / 10 })).sort((a, b) => b.total - a.total);
     
-    // Matriz Hospitalar
     const hospitalMatrixData = [];
     if (activeUnit === '104') {
         new Set(Object.keys(bySpecObj)).forEach(spec => {
@@ -514,7 +518,6 @@ export default function Dashboard() {
                     </Card>
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade (Clique para Filtrar)</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
-                        {/* ADICIONADO CLICK NO GRÁFICO */}
                         <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">{stats.bySpec.slice(0, 10).map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Bar></BarChart></ResponsiveContainer></div>
                     </Card>
                 </div>
@@ -522,15 +525,42 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                     <Card className="p-6 lg:col-span-1">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Faixa Etária</h3><ExportWidget targetId="chart-age" fileName="faixa_etaria" /></div>
-                        <div id="chart-age" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}>{stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend verticalAlign="bottom" height={36}/></PieChart></ResponsiveContainer></div>
+                        <div id="chart-age" className="h-64 w-full bg-white p-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" labelLine={false}>
+                                        {stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                    </Pie>
+                                    <RechartsTooltip />
+                                    <Legend layout="vertical" verticalAlign="middle" align="right"/>
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
                     </Card>
                     <Card className="p-6 lg:col-span-2">
-                        <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade (Top 10)</h3><ExportWidget targetId="chart-city" fileName="top_cidades" /></div>
-                        <div id="chart-city" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart data={stats.byCity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} /><Bar dataKey="value" name="Pacientes" fill="#0ea5e9" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
+                        <div className="flex justify-between items-start mb-6">
+                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade (Top 10)</h3>
+                            <div className="flex items-center gap-2">
+                                {/* BOTÃO DE ESCALA LOGARITMICA */}
+                                <button onClick={() => setIsLogScale(!isLogScale)} className={`flex items-center gap-1 px-2 py-1 text-xs rounded border ${isLogScale ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-500 border-slate-200'}`} title="Usar escala logarítmica para ver valores pequenos"><Scale size={14}/> {isLogScale ? 'Escala Log' : 'Escala Linear'}</button>
+                                <ExportWidget targetId="chart-city" fileName="top_cidades" />
+                            </div>
+                        </div>
+                        <div id="chart-city" className="h-64 w-full bg-white p-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart layout="vertical" data={stats.byCity} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                    <XAxis type="number" hide={false} scale={isLogScale ? 'log' : 'auto'} domain={isLogScale ? ['auto', 'auto'] : [0, 'auto']} tick={{fontSize: 10}} />
+                                    <YAxis dataKey="name" type="category" width={90} tick={{fill: '#475569', fontSize: 10, fontWeight: 500}} interval={0} />
+                                    <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
+                                    <Bar dataKey="value" name="Pacientes" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     </Card>
                 </div>
 
-                {/* MATRIZ HOSPITALAR E TABELA FINAL (SEM ALTERAÇÕES) */}
+                {/* MATRIZ HOSPITALAR */}
                 {activeUnit === '104' && (
                     <Card className="p-0 border-t-4 border-t-blue-600 mb-8 overflow-hidden">
                         <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div><ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} /></div>
