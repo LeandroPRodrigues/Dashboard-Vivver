@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, ListFilter
+  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -60,8 +60,10 @@ const normalizeHeader = (header) => {
 };
 
 // --- COMPONENTES UI ---
+
+// CARD: Adicionado 'break-inside-avoid' para evitar corte na impressão
 const Card = ({ children, className = "" }) => (
-  <div className={`bg-white rounded-lg shadow-sm border border-slate-200 nao-cortar ${className} print:shadow-none print:border-slate-300`}>
+  <div className={`bg-white rounded-lg shadow-sm border border-slate-200 break-inside-avoid mb-6 ${className} print:shadow-none print:border-slate-300 print:mb-8`}>
     {children}
   </div>
 );
@@ -123,14 +125,11 @@ const generateMockData = () => {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
         const day = Math.floor(Math.random() * 28) + 1;
-        // Mock Hour (07h as 18h)
         const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7;
         const min = Math.random() > 0.5 ? '30' : '00';
-        
         mock.push({
           unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
           date: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/${year}`, 
-          // Dados mockados vêm limpos, mas a lógica de upload tratará os sujos
           time: `${hour < 10 ? '0'+hour : hour}:${min}`,
           spec: specs[Math.floor(Math.random() * specs.length)],
           prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
@@ -147,7 +146,6 @@ const generateMockData = () => {
         const day = Math.floor(Math.random() * 28) + 1;
         const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7;
         const min = Math.random() > 0.5 ? '30' : '00';
-
         mock.push({
           unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
           date: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/${year}`,
@@ -164,7 +162,7 @@ const generateMockData = () => {
   return mock;
 };
 
-// --- EXPORT FUNCTIONS ---
+// --- EXPORT FUNCTIONS (BOTOES INDIVIDUAIS) ---
 const exportAsImage = async (elementId, fileName) => {
   const element = document.getElementById(elementId);
   if (!element) return;
@@ -193,9 +191,10 @@ const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
   const handleImage = () => { exportAsImage(targetId, fileName); setIsOpen(false); };
   const handleExcel = () => { if (dataForExcel) exportAsExcel(dataForExcel, fileName); setIsOpen(false); };
 
-  if (!dataForExcel) return <button onClick={handleImage} title="Baixar Imagem" className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-100"><FileDown size={18} /></button>;
+  // ESCONDIDO NA IMPRESSÃO (print:hidden)
+  if (!dataForExcel) return <button onClick={handleImage} title="Baixar Imagem" className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-100 print:hidden"><FileDown size={18} /></button>;
   return (
-    <div className="relative inline-block" ref={menuRef}>
+    <div className="relative inline-block print:hidden" ref={menuRef}>
       <button onClick={() => setIsOpen(!isOpen)} className={`text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-100 ${isOpen ? 'text-blue-600 bg-slate-50' : ''}`}><FileDown size={18} /></button>
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-slate-100 z-50 py-1 animate-in fade-in zoom-in-95 duration-200">
@@ -214,12 +213,11 @@ export default function Dashboard() {
   const [isDemoData, setIsDemoData] = useState(true);
   const [isComparisonMode, setIsComparisonMode] = useState(false);
   
-  // Estado para Escala Logarítmica
   const [isLogScale, setIsLogScale] = useState(false);
 
   // Filtros
   const [selectedYear, setSelectedYear] = useState('all');
-  const [selectedMonths, setSelectedMonths] = useState([]); // Agora é Array!
+  const [selectedMonths, setSelectedMonths] = useState([]);
   const [selectedSpecs, setSelectedSpecs] = useState([]);
   const [selectedProcs, setSelectedProcs] = useState([]);
   const [selectedProfs, setSelectedProfs] = useState([]); 
@@ -228,6 +226,11 @@ export default function Dashboard() {
   const [compYear2, setCompYear2] = useState('');
 
   useEffect(() => { setRawData(generateMockData()); }, []);
+
+  // --- FUNÇÃO DE IMPRESSÃO GLOBAL ---
+  const handlePrint = () => {
+    window.print();
+  };
 
   // --- DETECÇÃO INTELIGENTE DE UNIDADES ---
   const availableUnits = useMemo(() => {
@@ -288,10 +291,8 @@ export default function Dashboard() {
               let val = values[index].replace(/"/g, '').trim();
               if (['prof', 'spec', 'procName', 'unitName', 'city'].includes(key)) val = fixEncoding(val);
               
-              // LIMPEZA DA HORA: Se vier "01/01/2000 09:00:00", pega só "09:00:00"
               if (key === 'time' && val.includes(' ')) {
                   const parts = val.split(' ');
-                  // Geralmente a hora é a segunda parte, mas verificamos se tem ":"
                   if (parts[1] && parts[1].includes(':')) val = parts[1];
                   else if (parts[0] && parts[0].includes(':')) val = parts[0];
               }
@@ -346,14 +347,11 @@ export default function Dashboard() {
       }).filter(item => item.isValid); 
   }, [rawData, activeUnit]);
 
-  // --- RANKING PARA CORES FIXAS ---
   const specRankMap = useMemo(() => {
     const counts = {};
     unitData.forEach(item => {
         if (selectedYear !== 'all' && String(item.ano_final) !== selectedYear) return;
-        // Filtro de Múltiplos Meses
         if (selectedMonths.length > 0 && !selectedMonths.includes(String(item.mes_final))) return;
-        
         const s = item.spec || "Não informado";
         counts[s] = (counts[s] || 0) + 1;
     });
@@ -378,7 +376,6 @@ export default function Dashboard() {
       procs: Array.from(procs).sort().map(p => ({ label: p, value: p })),
       years: availableYears.map(y => ({ label: y, value: y })),
       profs: Array.from(profs).sort().map(p => ({ label: p, value: p })),
-      // Opções para o MultiSelect de Meses
       months: MONTH_NAMES.map((name, idx) => ({ label: name, value: String(idx + 1) }))
     };
   }, [unitData, availableYears]);
@@ -386,9 +383,7 @@ export default function Dashboard() {
   const filteredData = useMemo(() => {
     return unitData.filter(item => {
       if (selectedYear !== 'all' && String(item.ano_final) !== selectedYear) return false;
-      // Lógica Multi-Mês
       if (selectedMonths.length > 0 && !selectedMonths.includes(String(item.mes_final))) return false;
-      
       if (selectedSpecs.length > 0 && !selectedSpecs.includes(item.spec)) return false;
       if (selectedProcs.length > 0 && !selectedProcs.includes(item.display_procedure)) return false;
       if (selectedProfs.length > 0 && !selectedProfs.includes(item.prof)) return false;
@@ -409,13 +404,11 @@ export default function Dashboard() {
     filteredData.forEach(item => {
       if (item.mes_final >= 1 && item.mes_final <= 12) byMonthObj[item.mes_final] += 1;
       
-      // Processamento Temporal
       if (item.dateObj) {
           const dayName = WEEK_DAYS[item.dateObj.getDay()];
           byWeekDayObj[dayName] = (byWeekDayObj[dayName] || 0) + 1;
       }
       if (item.time) {
-          // Pega a hora limpa (já tratada no upload)
           const hour = parseInt(item.time.split(':')[0]);
           if (!isNaN(hour) && hour >= 0 && hour <= 23) byHourObj[hour] = (byHourObj[hour] || 0) + 1;
       }
@@ -437,7 +430,6 @@ export default function Dashboard() {
     const byAge = Object.keys(byAgeObj).map(k => ({ name: k, value: byAgeObj[k] }));
     const allProfs = Object.values(byProfObj).map(p => ({ ...p, daysCount: p.days.size || 1, avgPerDay: Math.round((p.total / (p.days.size || 1)) * 10) / 10 })).sort((a, b) => b.total - a.total);
     
-    // Dados Temporais
     const byWeekDay = WEEK_DAYS.map(d => ({ name: d, value: byWeekDayObj[d] }));
     const byHour = Object.keys(byHourObj).map(h => ({ name: `${h}h`, value: byHourObj[h] }));
 
@@ -462,7 +454,6 @@ export default function Dashboard() {
     return { total, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
-  // --- COMPARAÇÃO (COM FILTRO DE MÊS) ---
   const comparisonData = useMemo(() => {
     if (!isComparisonMode || !compYear1 || !compYear2) return null;
     const baseData = rawData
@@ -474,7 +465,6 @@ export default function Dashboard() {
             return newItem;
         }).filter(item => item.isValid);
 
-    // Filtra Anos E também os Meses selecionados (se houver)
     const filterByMonth = (d) => selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final));
 
     const d1 = baseData.filter(d => d.ano_final === compYear1 && filterByMonth(d));
@@ -486,11 +476,7 @@ export default function Dashboard() {
 
     const monthlyComp = [];
     for(let i=1; i<=12; i++) {
-        // Se houver filtro de meses, só mostra os meses selecionados no gráfico? 
-        // Não, melhor mostrar todos para contexto, mas os valores serão 0 se filtrados.
-        // Ou melhor: se filtrou, mostra só o que filtrou.
         if (selectedMonths.length > 0 && !selectedMonths.includes(String(i))) continue;
-
         monthlyComp.push({ name: MONTH_NAMES[i-1], [compYear1]: d1.filter(d => d.mes_final === i).length, [compYear2]: d2.filter(d => d.mes_final === i).length });
     }
 
@@ -515,6 +501,11 @@ export default function Dashboard() {
             <p className="text-slate-500 mt-1">Relatório de atendimentos - {availableUnits.find(u => u.code === activeUnit)?.name || `Unidade ${activeUnit}`}</p>
           </div>
           <div className="flex items-center gap-3 w-full lg:w-auto" data-html2canvas-ignore="true">
+            {/* BOTÃO PDF GLOBAL */}
+            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 rounded-md font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 transition-all shadow-sm">
+                <Printer size={18}/> Imprimir
+            </button>
+
             <button onClick={() => setIsComparisonMode(!isComparisonMode)} className={`flex items-center gap-2 px-4 py-2 rounded-md font-bold transition-all shadow-sm ${isComparisonMode ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}`}>
                 {isComparisonMode ? <LayoutDashboard size={18}/> : <ArrowRightLeft size={18}/>} {isComparisonMode ? 'Voltar ao Painel' : 'Comparar Anos'}
             </button>
@@ -529,7 +520,7 @@ export default function Dashboard() {
         </div>
 
         {/* BARRA DE UNIDADES */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col gap-4" data-html2canvas-ignore="true">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col gap-4 print:hidden" data-html2canvas-ignore="true">
           <div className="flex flex-wrap gap-2 pb-4 border-b border-slate-100">
             {availableUnits.map((unit) => (
               <Button key={unit.code} active={activeUnit === unit.code} onClick={() => setActiveUnit(unit.code)} className="flex items-center gap-2">
@@ -538,9 +529,8 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* ÁREA DE FILTROS COMUM */}
+          {/* FILTROS */}
           <div className="flex flex-col md:flex-row gap-4 flex-wrap">
-             {/* Filtro de Ano (Diferente para cada modo) */}
              {isComparisonMode ? (
                 <div className="flex gap-2 items-center bg-indigo-50 p-2 rounded border border-indigo-100">
                     <span className="text-xs font-bold text-indigo-700 uppercase">Comparar:</span>
@@ -552,7 +542,6 @@ export default function Dashboard() {
                 <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select><ChevronDown size={16} className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" /></div></div>
              )}
 
-             {/* FILTRO DE MÊS COM BOTÕES DE PERÍODO */}
              <div className="flex flex-col gap-1">
                 <div className="flex gap-1">
                     {Object.entries(PERIOD_PRESETS).map(([label, months]) => (
@@ -583,7 +572,12 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <Card className="p-6 flex flex-col justify-center items-center text-center"><p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear1}</p><h3 className="text-3xl font-bold text-slate-700">{comparisonData.total1.toLocaleString()}</h3></Card>
                     <Card className="p-6 flex flex-col justify-center items-center text-center"><p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear2}</p><h3 className="text-3xl font-bold text-slate-700">{comparisonData.total2.toLocaleString()}</h3></Card>
-                    <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}><p className="text-sm font-bold text-slate-500 uppercase">Variação YoY</p><h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>{comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%</h3><p className="text-xs text-slate-500 mt-1">Crescimento Relativo</p></Card>
+                    {/* YOY TRADUZIDO E MELHORADO */}
+                    <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
+                        <p className="text-sm font-bold text-slate-500 uppercase">Crescimento no Período</p>
+                        <h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>{comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%</h3>
+                        <p className="text-xs text-slate-500 mt-1">Comparação entre os anos selecionados</p>
+                    </Card>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <Card className="p-6">
@@ -599,7 +593,7 @@ export default function Dashboard() {
         ) : (
             /* --- VIEW: DASHBOARD NORMAL --- */
             <div className="animate-in fade-in duration-500">
-                <div className="mb-6 p-3 border border-slate-200 rounded text-sm bg-blue-50/50 flex flex-wrap gap-4">
+                <div className="mb-6 p-3 border border-slate-200 rounded text-sm bg-blue-50/50 flex flex-wrap gap-4 print:hidden">
                     <span className="font-bold text-slate-700">Filtros Aplicados:</span>
                     <span>Ano: <strong>{selectedYear === 'all' ? 'Todos' : selectedYear}</strong></span>
                     <span>Período: <strong>{selectedMonths.length === 0 ? 'Todos' : selectedMonths.length === 12 ? 'Ano Completo' : `${selectedMonths.length} meses selecionados`}</strong></span>
@@ -629,7 +623,6 @@ export default function Dashboard() {
                     </Card>
                 </div>
 
-                {/* NOVO: Linha de Análise Temporal */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Movimento por Dia da Semana</h3><ExportWidget targetId="chart-weekday" fileName="dias_semana" /></div>
@@ -678,7 +671,7 @@ export default function Dashboard() {
                     </Card>
                     <Card className="p-0 border-t-4 border-t-blue-400 lg:col-span-2 overflow-hidden">
                         <div className="p-6 pb-4 bg-white flex justify-between items-center">
-                            <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3><p className="text-sm text-slate-500 mt-1">Origem dos pacientes</p></div>
+                            <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3><div className="flex items-center gap-2 mt-1"><p className="text-sm text-slate-500">Origem dos pacientes</p><button onClick={() => setIsLogScale(!isLogScale)} className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border ${isLogScale ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-500 border-slate-200'}`} title="Usar escala logarítmica para ver valores pequenos"><Scale size={12}/> {isLogScale ? 'Log' : 'Linear'}</button></div></div>
                             <ExportWidget targetId="table-city" fileName="tabela_cidades" dataForExcel={stats.byCity} />
                         </div>
                         <div className="overflow-x-auto">
