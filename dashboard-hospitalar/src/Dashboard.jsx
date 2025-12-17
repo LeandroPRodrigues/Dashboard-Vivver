@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch
+  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, ListFilter
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -14,6 +14,15 @@ import * as XLSX from 'xlsx';
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const WEEK_DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+const PERIOD_PRESETS = {
+  '1º Tri': ['1','2','3'],
+  '2º Tri': ['4','5','6'],
+  '3º Tri': ['7','8','9'],
+  '4º Tri': ['10','11','12'],
+  '1º Sem': ['1','2','3','4','5','6'],
+  '2º Sem': ['7','8','9','10','11','12']
+};
 
 const HOSPITAL_PROCEDURE_MAP = {
   '301060096': 'Primeiro atendimento', '0301060096': 'Primeiro atendimento', '9999999984': 'Primeiro atendimento', 
@@ -24,7 +33,7 @@ const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade'],
   date: ['data_atendimento', 'Data atendimento', 'Data', 'dt_atend'],
-  time: ['hora_atendimento', 'Hora atendimento', 'Hora', 'hr_atend'], // NOVO
+  time: ['hora_atendimento', 'Hora atendimento', 'Hora', 'hr_atend'], 
   spec: ['nome_especialidade', 'Nome especialidade', 'Especialidade', 'CBO', 'cbo_descricao'],
   prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico'],
   procCode: ['codigo_procedimento', 'Codigo procedimento', 'Cód. Procedimento'],
@@ -49,13 +58,6 @@ const normalizeHeader = (header) => {
   }
   return cleanHeader; 
 };
-
-const parseDatePTBR = (dateStr) => {
-    if(!dateStr) return null;
-    const parts = dateStr.split('/');
-    if(parts.length === 3) return new Date(parts[2], parts[1]-1, parts[0]);
-    return null;
-}
 
 // --- COMPONENTES UI ---
 const Card = ({ children, className = "" }) => (
@@ -121,13 +123,14 @@ const generateMockData = () => {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
         const day = Math.floor(Math.random() * 28) + 1;
-        // Mock Hour
-        const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7; // 07h as 18h
+        // Mock Hour (07h as 18h)
+        const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7;
         const min = Math.random() > 0.5 ? '30' : '00';
         
         mock.push({
           unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
           date: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/${year}`, 
+          // Dados mockados vêm limpos, mas a lógica de upload tratará os sujos
           time: `${hour < 10 ? '0'+hour : hour}:${min}`,
           spec: specs[Math.floor(Math.random() * specs.length)],
           prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
@@ -137,7 +140,7 @@ const generateMockData = () => {
           ageGroup: age < 12 ? 'Criança (0-12)' : age < 18 ? 'Adolescente (13-18)' : age < 60 ? 'Adulto (19-59)' : 'Idoso (60+)'
         });
     }
-    // Gerar outras cidades menores
+    // Outras cidades
     for(let i=0; i<50; i++) {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
@@ -211,9 +214,12 @@ export default function Dashboard() {
   const [isDemoData, setIsDemoData] = useState(true);
   const [isComparisonMode, setIsComparisonMode] = useState(false);
   
+  // Estado para Escala Logarítmica
+  const [isLogScale, setIsLogScale] = useState(false);
+
   // Filtros
   const [selectedYear, setSelectedYear] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState('all');
+  const [selectedMonths, setSelectedMonths] = useState([]); // Agora é Array!
   const [selectedSpecs, setSelectedSpecs] = useState([]);
   const [selectedProcs, setSelectedProcs] = useState([]);
   const [selectedProfs, setSelectedProfs] = useState([]); 
@@ -247,14 +253,14 @@ export default function Dashboard() {
   const handleSpecChartClick = (data) => {
     if (data && data.name) {
       if (selectedSpecs.length === 1 && selectedSpecs.includes(data.name)) {
-        setSelectedSpecs([]); // Limpa se já estiver selecionado
+        setSelectedSpecs([]); 
       } else {
-        setSelectedSpecs([data.name]); // Seleciona se não estiver
+        setSelectedSpecs([data.name]); 
       }
     }
   };
 
-  // --- UPLOAD COM SMART MAPPING ---
+  // --- UPLOAD COM SMART MAPPING & LIMPEZA DE HORA ---
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -281,6 +287,15 @@ export default function Dashboard() {
             if (values[index]) {
               let val = values[index].replace(/"/g, '').trim();
               if (['prof', 'spec', 'procName', 'unitName', 'city'].includes(key)) val = fixEncoding(val);
+              
+              // LIMPEZA DA HORA: Se vier "01/01/2000 09:00:00", pega só "09:00:00"
+              if (key === 'time' && val.includes(' ')) {
+                  const parts = val.split(' ');
+                  // Geralmente a hora é a segunda parte, mas verificamos se tem ":"
+                  if (parts[1] && parts[1].includes(':')) val = parts[1];
+                  else if (parts[0] && parts[0].includes(':')) val = parts[0];
+              }
+              
               rowObj[key] = val; 
             }
           });
@@ -336,13 +351,14 @@ export default function Dashboard() {
     const counts = {};
     unitData.forEach(item => {
         if (selectedYear !== 'all' && String(item.ano_final) !== selectedYear) return;
-        if (selectedMonth !== 'all' && String(item.mes_final) !== selectedMonth) return;
+        // Filtro de Múltiplos Meses
+        if (selectedMonths.length > 0 && !selectedMonths.includes(String(item.mes_final))) return;
+        
         const s = item.spec || "Não informado";
         counts[s] = (counts[s] || 0) + 1;
     });
-    const sortedSpecs = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
-    return sortedSpecs;
-  }, [unitData, selectedYear, selectedMonth]);
+    return Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
+  }, [unitData, selectedYear, selectedMonths]);
 
   const getSpecColor = (specName) => {
     const idx = specRankMap.indexOf(specName);
@@ -362,6 +378,7 @@ export default function Dashboard() {
       procs: Array.from(procs).sort().map(p => ({ label: p, value: p })),
       years: availableYears.map(y => ({ label: y, value: y })),
       profs: Array.from(profs).sort().map(p => ({ label: p, value: p })),
+      // Opções para o MultiSelect de Meses
       months: MONTH_NAMES.map((name, idx) => ({ label: name, value: String(idx + 1) }))
     };
   }, [unitData, availableYears]);
@@ -369,13 +386,15 @@ export default function Dashboard() {
   const filteredData = useMemo(() => {
     return unitData.filter(item => {
       if (selectedYear !== 'all' && String(item.ano_final) !== selectedYear) return false;
-      if (selectedMonth !== 'all' && String(item.mes_final) !== selectedMonth) return false;
+      // Lógica Multi-Mês
+      if (selectedMonths.length > 0 && !selectedMonths.includes(String(item.mes_final))) return false;
+      
       if (selectedSpecs.length > 0 && !selectedSpecs.includes(item.spec)) return false;
       if (selectedProcs.length > 0 && !selectedProcs.includes(item.display_procedure)) return false;
       if (selectedProfs.length > 0 && !selectedProfs.includes(item.prof)) return false;
       return true;
     });
-  }, [unitData, selectedYear, selectedMonth, selectedSpecs, selectedProcs, selectedProfs]);
+  }, [unitData, selectedYear, selectedMonths, selectedSpecs, selectedProcs, selectedProfs]);
 
   // --- ESTATÍSTICAS ---
   const stats = useMemo(() => {
@@ -396,8 +415,9 @@ export default function Dashboard() {
           byWeekDayObj[dayName] = (byWeekDayObj[dayName] || 0) + 1;
       }
       if (item.time) {
+          // Pega a hora limpa (já tratada no upload)
           const hour = parseInt(item.time.split(':')[0]);
-          if (!isNaN(hour)) byHourObj[hour] = (byHourObj[hour] || 0) + 1;
+          if (!isNaN(hour) && hour >= 0 && hour <= 23) byHourObj[hour] = (byHourObj[hour] || 0) + 1;
       }
 
       const spec = item.spec || "Não informado"; bySpecObj[spec] = (bySpecObj[spec] || 0) + 1;
@@ -442,7 +462,7 @@ export default function Dashboard() {
     return { total, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
-  // --- COMPARAÇÃO ---
+  // --- COMPARAÇÃO (COM FILTRO DE MÊS) ---
   const comparisonData = useMemo(() => {
     if (!isComparisonMode || !compYear1 || !compYear2) return null;
     const baseData = rawData
@@ -454,8 +474,11 @@ export default function Dashboard() {
             return newItem;
         }).filter(item => item.isValid);
 
-    const d1 = baseData.filter(d => d.ano_final === compYear1);
-    const d2 = baseData.filter(d => d.ano_final === compYear2);
+    // Filtra Anos E também os Meses selecionados (se houver)
+    const filterByMonth = (d) => selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final));
+
+    const d1 = baseData.filter(d => d.ano_final === compYear1 && filterByMonth(d));
+    const d2 = baseData.filter(d => d.ano_final === compYear2 && filterByMonth(d));
 
     const total1 = d1.length;
     const total2 = d2.length;
@@ -463,6 +486,11 @@ export default function Dashboard() {
 
     const monthlyComp = [];
     for(let i=1; i<=12; i++) {
+        // Se houver filtro de meses, só mostra os meses selecionados no gráfico? 
+        // Não, melhor mostrar todos para contexto, mas os valores serão 0 se filtrados.
+        // Ou melhor: se filtrou, mostra só o que filtrou.
+        if (selectedMonths.length > 0 && !selectedMonths.includes(String(i))) continue;
+
         monthlyComp.push({ name: MONTH_NAMES[i-1], [compYear1]: d1.filter(d => d.mes_final === i).length, [compYear2]: d2.filter(d => d.mes_final === i).length });
     }
 
@@ -474,7 +502,7 @@ export default function Dashboard() {
     }).sort((a, b) => b.diff - a.diff);
 
     return { monthlyComp, specDiff, total1, total2, growth };
-  }, [isComparisonMode, compYear1, compYear2, activeUnit, rawData]);
+  }, [isComparisonMode, compYear1, compYear2, activeUnit, rawData, selectedMonths]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800">
@@ -510,26 +538,43 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* FILTROS */}
-          {isComparisonMode ? (
-            <div className="flex flex-col md:flex-row gap-4 items-center bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                <div className="flex items-center gap-2 text-indigo-800 font-bold"><ArrowRightLeft size={20}/> <span>Modo Comparativo</span></div>
-                <div className="flex gap-4">
-                    <select value={compYear1} onChange={e => setCompYear1(e.target.value)} className="bg-white border border-indigo-200 rounded px-3 py-1 text-sm font-medium">{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select>
+          {/* ÁREA DE FILTROS COMUM */}
+          <div className="flex flex-col md:flex-row gap-4 flex-wrap">
+             {/* Filtro de Ano (Diferente para cada modo) */}
+             {isComparisonMode ? (
+                <div className="flex gap-2 items-center bg-indigo-50 p-2 rounded border border-indigo-100">
+                    <span className="text-xs font-bold text-indigo-700 uppercase">Comparar:</span>
+                    <select value={compYear1} onChange={e => setCompYear1(e.target.value)} className="bg-white border border-indigo-200 rounded px-2 py-1 text-sm">{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select>
                     <span className="text-indigo-400 font-bold">vs</span>
-                    <select value={compYear2} onChange={e => setCompYear2(e.target.value)} className="bg-white border border-indigo-200 rounded px-3 py-1 text-sm font-medium">{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select>
+                    <select value={compYear2} onChange={e => setCompYear2(e.target.value)} className="bg-white border border-indigo-200 rounded px-2 py-1 text-sm">{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select>
                 </div>
-            </div>
-          ) : (
-            <div className="flex flex-col md:flex-row gap-4 flex-wrap">
+             ) : (
                 <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select><ChevronDown size={16} className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" /></div></div>
-                <div className="w-full md:w-40"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Mês</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}><option value="all">Todos</option>{filterOptions.months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select><ChevronDown size={16} className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" /></div></div>
-                <MultiSelect label="Especialidades" options={filterOptions.specs} selectedValues={selectedSpecs} onChange={setSelectedSpecs} />
-                <MultiSelect label="Profissionais" options={filterOptions.profs} selectedValues={selectedProfs} onChange={setSelectedProfs} />
-                <MultiSelect label="Procedimentos" options={filterOptions.procs} selectedValues={selectedProcs} onChange={setSelectedProcs} />
-                {(selectedYear !== 'all' || selectedMonth !== 'all' || selectedSpecs.length > 0 || selectedProcs.length > 0 || selectedProfs.length > 0) && (<div className="flex items-end pb-1"><button onClick={() => { setSelectedYear('all'); setSelectedMonth('all'); setSelectedSpecs([]); setSelectedProcs([]); setSelectedProfs([]); }} className="text-sm text-red-500 hover:text-red-700 font-medium flex items-center gap-1 px-3 py-2 rounded hover:bg-red-50 transition-colors"><X size={16} /> Limpar</button></div>)}
-            </div>
-          )}
+             )}
+
+             {/* FILTRO DE MÊS COM BOTÕES DE PERÍODO */}
+             <div className="flex flex-col gap-1">
+                <div className="flex gap-1">
+                    {Object.entries(PERIOD_PRESETS).map(([label, months]) => (
+                        <button key={label} onClick={() => setSelectedMonths(months)} className="px-2 py-0.5 text-[10px] bg-slate-100 hover:bg-blue-100 text-slate-600 rounded border border-slate-200 transition-colors">{label}</button>
+                    ))}
+                </div>
+                <MultiSelect label="Meses / Período" options={filterOptions.months} selectedValues={selectedMonths} onChange={setSelectedMonths} placeholder="Todos os meses" />
+             </div>
+
+             <MultiSelect label="Especialidades" options={filterOptions.specs} selectedValues={selectedSpecs} onChange={setSelectedSpecs} />
+             
+             {!isComparisonMode && (
+                <>
+                    <MultiSelect label="Profissionais" options={filterOptions.profs} selectedValues={selectedProfs} onChange={setSelectedProfs} />
+                    <MultiSelect label="Procedimentos" options={filterOptions.procs} selectedValues={selectedProcs} onChange={setSelectedProcs} />
+                </>
+             )}
+
+             <div className="flex items-end pb-1">
+                <button onClick={() => { setSelectedYear('all'); setSelectedMonths([]); setSelectedSpecs([]); setSelectedProcs([]); setSelectedProfs([]); }} className="text-sm text-red-500 hover:text-red-700 font-medium flex items-center gap-1 px-3 py-2 rounded hover:bg-red-50 transition-colors"><X size={16} /> Limpar</button>
+             </div>
+          </div>
         </div>
 
         {/* --- VIEW: COMPARAÇÃO --- */}
@@ -557,7 +602,7 @@ export default function Dashboard() {
                 <div className="mb-6 p-3 border border-slate-200 rounded text-sm bg-blue-50/50 flex flex-wrap gap-4">
                     <span className="font-bold text-slate-700">Filtros Aplicados:</span>
                     <span>Ano: <strong>{selectedYear === 'all' ? 'Todos' : selectedYear}</strong></span>
-                    <span>Mês: <strong>{selectedMonth === 'all' ? 'Todos' : MONTH_NAMES[selectedMonth-1]}</strong></span>
+                    <span>Período: <strong>{selectedMonths.length === 0 ? 'Todos' : selectedMonths.length === 12 ? 'Ano Completo' : `${selectedMonths.length} meses selecionados`}</strong></span>
                     {selectedSpecs.length > 0 && <span>Especialidades: <strong>{selectedSpecs.length}</strong></span>}
                 </div>
 
@@ -574,7 +619,6 @@ export default function Dashboard() {
                     </Card>
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade (Clique para Filtrar)</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
-                        {/* CORES CORRIGIDAS AQUI - Usando getSpecColor */}
                         <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                         <Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">
                             {stats.bySpec.slice(0, 10).map((entry, index) => (
@@ -632,7 +676,6 @@ export default function Dashboard() {
                             </ResponsiveContainer>
                         </div>
                     </Card>
-                    {/* TABELA DE CIDADES */}
                     <Card className="p-0 border-t-4 border-t-blue-400 lg:col-span-2 overflow-hidden">
                         <div className="p-6 pb-4 bg-white flex justify-between items-center">
                             <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3><p className="text-sm text-slate-500 mt-1">Origem dos pacientes</p></div>
@@ -659,7 +702,6 @@ export default function Dashboard() {
                     </Card>
                 </div>
 
-                {/* MATRIZ HOSPITALAR */}
                 {activeUnit === '104' && (
                     <Card className="p-0 border-t-4 border-t-blue-600 mb-8 overflow-hidden">
                         <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div><ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} /></div>
