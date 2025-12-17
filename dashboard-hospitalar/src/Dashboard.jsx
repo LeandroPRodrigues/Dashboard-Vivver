@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
-  LineChart, Line, Cell, PieChart, Pie
+  LineChart, Line, Cell, PieChart, Pie, AreaChart, Area
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, Filter, ChevronDown, X, Check, Search, Info, User, Clock, Table, Download, AlertTriangle, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale
+  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 // --- CONFIGURAÇÃO DE CORES E CONSTANTES ---
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const WEEK_DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
 const HOSPITAL_PROCEDURE_MAP = {
   '301060096': 'Primeiro atendimento', '0301060096': 'Primeiro atendimento', '9999999984': 'Primeiro atendimento', 
@@ -23,6 +24,7 @@ const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade'],
   date: ['data_atendimento', 'Data atendimento', 'Data', 'dt_atend'],
+  time: ['hora_atendimento', 'Hora atendimento', 'Hora', 'hr_atend'], // NOVO
   spec: ['nome_especialidade', 'Nome especialidade', 'Especialidade', 'CBO', 'cbo_descricao'],
   prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico'],
   procCode: ['codigo_procedimento', 'Codigo procedimento', 'Cód. Procedimento'],
@@ -47,6 +49,13 @@ const normalizeHeader = (header) => {
   }
   return cleanHeader; 
 };
+
+const parseDatePTBR = (dateStr) => {
+    if(!dateStr) return null;
+    const parts = dateStr.split('/');
+    if(parts.length === 3) return new Date(parts[2], parts[1]-1, parts[0]);
+    return null;
+}
 
 // --- COMPONENTES UI ---
 const Card = ({ children, className = "" }) => (
@@ -111,9 +120,16 @@ const generateMockData = () => {
     for(let i=0; i<1200; i++) {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
+        const day = Math.floor(Math.random() * 28) + 1;
+        // Mock Hour
+        const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7; // 07h as 18h
+        const min = Math.random() > 0.5 ? '30' : '00';
+        
         mock.push({
           unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
-          date: `15/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
+          date: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/${year}`, 
+          time: `${hour < 10 ? '0'+hour : hour}:${min}`,
+          spec: specs[Math.floor(Math.random() * specs.length)],
           prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
           procName: "PROCEDIMENTO HOSPITALAR",
           city: "OURO BRANCO - MG",
@@ -125,9 +141,15 @@ const generateMockData = () => {
     for(let i=0; i<50; i++) {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
+        const day = Math.floor(Math.random() * 28) + 1;
+        const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7;
+        const min = Math.random() > 0.5 ? '30' : '00';
+
         mock.push({
           unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
-          date: `15/${month}/${year}`, spec: specs[Math.floor(Math.random() * specs.length)],
+          date: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/${year}`,
+          time: `${hour < 10 ? '0'+hour : hour}:${min}`,
+          spec: specs[Math.floor(Math.random() * specs.length)],
           prof: `Dr. ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
           procName: "PROCEDIMENTO HOSPITALAR",
           city: cities[Math.floor(Math.random() * (cities.length - 1)) + 1],
@@ -265,12 +287,18 @@ export default function Dashboard() {
 
           let ano = 'N/A';
           let mes = 0;
+          let dt = null;
           if (rowObj.date) {
              const parts = rowObj.date.split('/');
-             if (parts.length === 3) { ano = parts[2]; mes = parseInt(parts[1]); }
+             if (parts.length === 3) { 
+               ano = parts[2]; 
+               mes = parseInt(parts[1]); 
+               dt = new Date(parts[2], parts[1]-1, parts[0]);
+             }
           }
           rowObj.ano_final = ano;
           rowObj.mes_final = mes;
+          rowObj.dateObj = dt;
 
           if (rowObj.age) {
              const age = parseInt(rowObj.age);
@@ -284,7 +312,7 @@ export default function Dashboard() {
     };
   };
 
-  // --- DADOS FILTRADOS (LÓGICA CENTRAL) ---
+  // --- DADOS FILTRADOS ---
   const unitData = useMemo(() => {
     return rawData
       .filter(item => String(item.unitCode || "").trim() === activeUnit)
@@ -304,26 +332,21 @@ export default function Dashboard() {
   }, [rawData, activeUnit]);
 
   // --- RANKING PARA CORES FIXAS ---
-  // Calculamos a ordem das especialidades IGNORANDO o filtro de especialidade,
-  // mas respeitando Ano e Mês. Isso garante que a cor 2 seja sempre a cor 2.
   const specRankMap = useMemo(() => {
     const counts = {};
     unitData.forEach(item => {
-        // Aplica filtro de ano/mês se houver
         if (selectedYear !== 'all' && String(item.ano_final) !== selectedYear) return;
         if (selectedMonth !== 'all' && String(item.mes_final) !== selectedMonth) return;
-        
         const s = item.spec || "Não informado";
         counts[s] = (counts[s] || 0) + 1;
     });
-    // Retorna array de nomes ordenado por volume
     const sortedSpecs = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
     return sortedSpecs;
   }, [unitData, selectedYear, selectedMonth]);
 
   const getSpecColor = (specName) => {
     const idx = specRankMap.indexOf(specName);
-    if (idx === -1) return '#cbd5e1'; // Cinza se não achar
+    if (idx === -1) return '#cbd5e1'; 
     return COLORS[idx % COLORS.length];
   };
 
@@ -358,11 +381,25 @@ export default function Dashboard() {
   const stats = useMemo(() => {
     const total = filteredData.length;
     const byMonthObj = {}; const bySpecObj = {}; const byProfObj = {}; const byCityObj = {}; const byAgeObj = {};
+    const byWeekDayObj = {}; const byHourObj = {};
+
     for (let i = 1; i <= 12; i++) byMonthObj[i] = 0;
+    WEEK_DAYS.forEach(d => byWeekDayObj[d] = 0);
+    for (let h = 0; h < 24; h++) byHourObj[h] = 0;
 
     filteredData.forEach(item => {
       if (item.mes_final >= 1 && item.mes_final <= 12) byMonthObj[item.mes_final] += 1;
       
+      // Processamento Temporal
+      if (item.dateObj) {
+          const dayName = WEEK_DAYS[item.dateObj.getDay()];
+          byWeekDayObj[dayName] = (byWeekDayObj[dayName] || 0) + 1;
+      }
+      if (item.time) {
+          const hour = parseInt(item.time.split(':')[0]);
+          if (!isNaN(hour)) byHourObj[hour] = (byHourObj[hour] || 0) + 1;
+      }
+
       const spec = item.spec || "Não informado"; bySpecObj[spec] = (bySpecObj[spec] || 0) + 1;
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
@@ -375,16 +412,15 @@ export default function Dashboard() {
     });
 
     const byMonth = Object.keys(byMonthObj).map(m => ({ name: MONTH_NAMES[parseInt(m)-1], index: parseInt(m), value: byMonthObj[m] })).sort((a, b) => a.index - b.index);
-    // Ordenar specs pelo valor atual, mas a cor virá do specRankMap
     const bySpec = Object.keys(bySpecObj).map(k => ({ name: k, value: bySpecObj[k] })).sort((a, b) => b.value - a.value);
-    
-    // Cidades (Para tabela) - Ordenadas
     const byCity = Object.keys(byCityObj).map(k => ({ name: k, value: byCityObj[k], percent: ((byCityObj[k]/total)*100).toFixed(1) })).sort((a, b) => b.value - a.value);
-    
     const byAge = Object.keys(byAgeObj).map(k => ({ name: k, value: byAgeObj[k] }));
-    
     const allProfs = Object.values(byProfObj).map(p => ({ ...p, daysCount: p.days.size || 1, avgPerDay: Math.round((p.total / (p.days.size || 1)) * 10) / 10 })).sort((a, b) => b.total - a.total);
     
+    // Dados Temporais
+    const byWeekDay = WEEK_DAYS.map(d => ({ name: d, value: byWeekDayObj[d] }));
+    const byHour = Object.keys(byHourObj).map(h => ({ name: `${h}h`, value: byHourObj[h] }));
+
     const hospitalMatrixData = [];
     if (activeUnit === '104') {
         new Set(Object.keys(bySpecObj)).forEach(spec => {
@@ -403,7 +439,7 @@ export default function Dashboard() {
     const profKeys = new Set();
     allProfs.slice(0, 20).forEach(p => { Object.keys(p).forEach(k => { if (!['name', 'total', 'days', 'daysCount', 'avgPerDay'].includes(k)) profKeys.add(k); }); });
 
-    return { total, byMonth, bySpec, byCity, byAge, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
+    return { total, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
   // --- COMPARAÇÃO ---
@@ -546,6 +582,38 @@ export default function Dashboard() {
                             ))}
                         </Bar>
                         </BarChart></ResponsiveContainer></div>
+                    </Card>
+                </div>
+
+                {/* NOVO: Linha de Análise Temporal */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <Card className="p-6">
+                        <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Movimento por Dia da Semana</h3><ExportWidget targetId="chart-weekday" fileName="dias_semana" /></div>
+                        <div id="chart-weekday" className="h-64 w-full bg-white p-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats.byWeekDay} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
+                                    <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
+                                    <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
+                                    <Bar dataKey="value" name="Atendimentos" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </Card>
+                    <Card className="p-6">
+                        <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Watch size={20} className="text-slate-400" /> Horários de Pico</h3><ExportWidget targetId="chart-hours" fileName="horarios_pico" /></div>
+                        <div id="chart-hours" className="h-64 w-full bg-white p-2">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={stats.byHour} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} interval={2} />
+                                    <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
+                                    <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
+                                    <Area type="monotone" dataKey="value" name="Atendimentos" stroke="#f59e0b" fill="#fef3c7" strokeWidth={2} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
                     </Card>
                 </div>
 
