@@ -14,14 +14,13 @@ import * as XLSX from 'xlsx';
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-// Mapeamento de Códigos para Hospital (Unidade 104) - Lógica Intacta
+// Mapeamento de Códigos para Hospital (Unidade 104)
 const HOSPITAL_PROCEDURE_MAP = {
   '301060096': 'Primeiro atendimento', '0301060096': 'Primeiro atendimento', '9999999984': 'Primeiro atendimento', 
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
 
-// --- DICIONÁRIO INTELIGENTE DE COLUNAS ---
-// O sistema vai procurar por qualquer um desses nomes no CSV para preencher o dado correto
+// --- DICIONÁRIO INTELIGENTE DE COLUNAS (ATUALIZADO) ---
 const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade'],
@@ -30,9 +29,11 @@ const COLUMN_ALIASES = {
   prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico'],
   procCode: ['codigo_procedimento', 'Codigo procedimento', 'Cód. Procedimento'],
   procName: ['nome_procedimento', 'Nome procedimento', 'Procedimento'],
-  city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente'], // Novo
-  age: ['idade', 'Idade', 'Idade atendimento paciente'], // Novo
-  gender: ['sexo', 'Sexo', 'Genero'] // Novo
+  
+  // ATUALIZADO COM OS NOMES QUE VOCÊ FORNECEU
+  city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente', 'nome_municipio_paciente'], 
+  age: ['idade', 'Idade', 'Idade atendimento paciente', 'idade_atendimento_paciente'],
+  gender: ['sexo', 'Sexo', 'Genero']
 };
 
 // --- HELPERS ---
@@ -48,7 +49,7 @@ const normalizeHeader = (header) => {
   for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
     if (aliases.some(alias => cleanHeader.toLowerCase() === alias.toLowerCase())) return key;
   }
-  return cleanHeader; // Retorna o original se não encontrar correspondência
+  return cleanHeader; 
 };
 
 // --- COMPONENTES UI ---
@@ -104,14 +105,13 @@ const MultiSelect = ({ label, options, selectedValues, onChange, placeholder = "
   );
 };
 
-// --- MOCK DATA (ATUALIZADO COM DADOS DEMOGRÁFICOS) ---
+// --- MOCK DATA ---
 const generateMockData = () => {
   const mock = [];
   const specs = ['Clínico Geral', 'Pediatria', 'Ortopedia', 'Cardiologia', 'Dermatologia'];
   const cities = ['Ouro Branco', 'Conselheiro Lafaiete', 'Congonhas', 'Belo Horizonte'];
   
   ['2024', '2025'].forEach(year => {
-    // Unidade 104
     for(let i=0; i<400; i++) {
       const month = Math.floor(Math.random() * 12) + 1;
       const age = Math.floor(Math.random() * 80) + 1;
@@ -125,7 +125,6 @@ const generateMockData = () => {
         ageGroup: age < 12 ? 'Criança' : age < 18 ? 'Adolescente' : age < 60 ? 'Adulto' : 'Idoso'
       });
     }
-    // Unidade 51
     for(let i=0; i<300; i++) {
       const month = Math.floor(Math.random() * 12) + 1;
       const age = Math.floor(Math.random() * 80) + 1;
@@ -190,8 +189,6 @@ export default function Dashboard() {
   const [activeUnit, setActiveUnit] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(true);
-  
-  // Modos
   const [isComparisonMode, setIsComparisonMode] = useState(false);
 
   // Filtros
@@ -226,6 +223,18 @@ export default function Dashboard() {
   useEffect(() => { if (availableUnits.length > 0 && !availableUnits.find(u => u.code === activeUnit)) setActiveUnit(availableUnits[0].code); }, [availableUnits]);
   useEffect(() => { if (availableYears.length >= 1) { setSelectedYear(availableYears[0]); setCompYear1(availableYears[0]); setCompYear2(availableYears[1] || availableYears[0]); } }, [availableYears]);
 
+  // --- DRILL-DOWN HANDLER ---
+  const handleSpecChartClick = (data) => {
+    if (data && data.name) {
+      // Se já estiver selecionado, remove. Se não, seleciona.
+      if (selectedSpecs.includes(data.name)) {
+        setSelectedSpecs(prev => prev.filter(s => s !== data.name));
+      } else {
+        setSelectedSpecs([data.name]);
+      }
+    }
+  };
+
   // --- UPLOAD COM SMART MAPPING ---
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -240,9 +249,8 @@ export default function Dashboard() {
       const firstLine = rows[0];
       const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
       
-      // Mapeamento dos Headers
       const rawHeaders = rows[0].split(delimiter).map(h => h.trim().replace(/"/g, ''));
-      const headerMap = rawHeaders.map(h => normalizeHeader(h)); // Converte nomes CSV para chaves internas
+      const headerMap = rawHeaders.map(h => normalizeHeader(h)); 
 
       const parsedData = [];
       for (let i = 1; i < rows.length; i++) {
@@ -254,11 +262,10 @@ export default function Dashboard() {
             if (values[index]) {
               let val = values[index].replace(/"/g, '').trim();
               if (['prof', 'spec', 'procName', 'unitName', 'city'].includes(key)) val = fixEncoding(val);
-              rowObj[key] = val; // Usa a chave normalizada
+              rowObj[key] = val; 
             }
           });
 
-          // Processamento extra
           let ano = 'N/A';
           let mes = 0;
           if (rowObj.date) {
@@ -268,7 +275,6 @@ export default function Dashboard() {
           rowObj.ano_final = ano;
           rowObj.mes_final = mes;
 
-          // Faixa Etária
           if (rowObj.age) {
              const age = parseInt(rowObj.age);
              rowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
@@ -327,7 +333,7 @@ export default function Dashboard() {
     });
   }, [unitData, selectedYear, selectedMonth, selectedSpecs, selectedProcs, selectedProfs]);
 
-  // --- ESTATÍSTICAS PRINCIPAIS ---
+  // --- ESTATÍSTICAS ---
   const stats = useMemo(() => {
     const total = filteredData.length;
     const byMonthObj = {}; const bySpecObj = {}; const byProfObj = {}; const byCityObj = {}; const byAgeObj = {};
@@ -376,12 +382,12 @@ export default function Dashboard() {
     return { total, byMonth, bySpec, byCity, byAge, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit]);
 
-  // --- LÓGICA DE COMPARAÇÃO AVANÇADA ---
+  // --- COMPARAÇÃO ---
   const comparisonData = useMemo(() => {
     if (!isComparisonMode || !compYear1 || !compYear2) return null;
     const baseData = rawData
         .filter(item => String(item.unitCode || "").trim() === activeUnit)
-        .map(item => { // Reaproveita validação
+        .map(item => {
             const newItem = { ...item }; const codProc = String(item.procCode || "").trim(); const nomeProc = (item.procName || "").toUpperCase();
             if (activeUnit === '104') { if (HOSPITAL_PROCEDURE_MAP[codProc]) newItem.isValid = true; else newItem.isValid = false; } 
             else { if (nomeProc.includes("ELETROCARDIOGRAMA")) newItem.isValid = false; else newItem.isValid = true; }
@@ -395,19 +401,17 @@ export default function Dashboard() {
     const total2 = d2.length;
     const growth = total1 > 0 ? ((total2 - total1) / total1) * 100 : 0;
 
-    // Comparativo Mensal
     const monthlyComp = [];
     for(let i=1; i<=12; i++) {
         monthlyComp.push({ name: MONTH_NAMES[i-1], [compYear1]: d1.filter(d => d.mes_final === i).length, [compYear2]: d2.filter(d => d.mes_final === i).length });
     }
 
-    // Variação por Especialidade (Quem mais cresceu/caiu?)
     const allSpecs = new Set([...d1.map(d => d.spec), ...d2.map(d => d.spec)]);
     const specDiff = Array.from(allSpecs).map(spec => {
         const v1 = d1.filter(d => d.spec === spec).length;
         const v2 = d2.filter(d => d.spec === spec).length;
         return { name: spec || "N/I", v1, v2, diff: v2 - v1 };
-    }).sort((a, b) => b.diff - a.diff); // Ordenado por maior crescimento absoluto
+    }).sort((a, b) => b.diff - a.diff);
 
     return { monthlyComp, specDiff, total1, total2, growth };
   }, [isComparisonMode, compYear1, compYear2, activeUnit, rawData]);
@@ -446,7 +450,7 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* FILTROS (CONDICIONAL) */}
+          {/* FILTROS */}
           {isComparisonMode ? (
             <div className="flex flex-col md:flex-row gap-4 items-center bg-indigo-50 p-4 rounded-lg border border-indigo-100">
                 <div className="flex items-center gap-2 text-indigo-800 font-bold"><ArrowRightLeft size={20}/> <span>Modo Comparativo</span></div>
@@ -468,65 +472,22 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* --- VIEW: COMPARAÇÃO (MELHORADA) --- */}
+        {/* --- VIEW: COMPARAÇÃO --- */}
         {isComparisonMode && comparisonData ? (
             <div className="animate-in fade-in duration-500">
-                {/* Scorecards de Variação */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <Card className="p-6 flex flex-col justify-center items-center text-center">
-                        <p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear1}</p>
-                        <h3 className="text-3xl font-bold text-slate-700">{comparisonData.total1.toLocaleString()}</h3>
-                    </Card>
-                    <Card className="p-6 flex flex-col justify-center items-center text-center">
-                        <p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear2}</p>
-                        <h3 className="text-3xl font-bold text-slate-700">{comparisonData.total2.toLocaleString()}</h3>
-                    </Card>
-                    <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
-                        <p className="text-sm font-bold text-slate-500 uppercase">Variação YoY</p>
-                        <h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1">Crescimento Relativo</p>
-                    </Card>
+                    <Card className="p-6 flex flex-col justify-center items-center text-center"><p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear1}</p><h3 className="text-3xl font-bold text-slate-700">{comparisonData.total1.toLocaleString()}</h3></Card>
+                    <Card className="p-6 flex flex-col justify-center items-center text-center"><p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear2}</p><h3 className="text-3xl font-bold text-slate-700">{comparisonData.total2.toLocaleString()}</h3></Card>
+                    <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}><p className="text-sm font-bold text-slate-500 uppercase">Variação YoY</p><h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>{comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%</h3><p className="text-xs text-slate-500 mt-1">Crescimento Relativo</p></Card>
                 </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-indigo-500" /> Comparativo Mensal</h3><ExportWidget targetId="comp-mensal" fileName={`comparativo_mensal_${compYear1}_${compYear2}`} /></div>
-                        <div id="comp-mensal" className="h-80 w-full bg-white p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={comparisonData.monthlyComp} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
-                                    <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
-                                    <RechartsTooltip contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                    <Legend />
-                                    <Line type="monotone" dataKey={compYear1} stroke="#94a3b8" strokeWidth={3} dot={{r:4}} />
-                                    <Line type="monotone" dataKey={compYear2} stroke="#4f46e5" strokeWidth={3} dot={{r:4}} />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
+                        <div id="comp-mensal" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><LineChart data={comparisonData.monthlyComp} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} /><RechartsTooltip contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} /><Legend /><Line type="monotone" dataKey={compYear1} stroke="#94a3b8" strokeWidth={3} dot={{r:4}} /><Line type="monotone" dataKey={compYear2} stroke="#4f46e5" strokeWidth={3} dot={{r:4}} /></LineChart></ResponsiveContainer></div>
                     </Card>
-                    
-                    {/* NOVO: Gráfico de Variação Absoluta */}
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-indigo-500" /> Variação por Especialidade (Top 10)</h3><ExportWidget targetId="comp-diff" fileName={`variacao_especialidade_${compYear1}_${compYear2}`} /></div>
-                        <div id="comp-diff" className="h-80 w-full bg-white p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart layout="vertical" data={comparisonData.specDiff.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                                    <XAxis type="number" hide />
-                                    <YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} />
-                                    <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                    <Legend />
-                                    <Bar dataKey="diff" name="Variação Absoluta" fill="#8b5cf6" radius={[0, 4, 4, 0]}>
-                                        {comparisonData.specDiff.slice(0, 10).map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.diff >= 0 ? '#22c55e' : '#ef4444'} />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
+                        <div id="comp-diff" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={comparisonData.specDiff.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} /><Legend /><Bar dataKey="diff" name="Variação Absoluta" fill="#8b5cf6" radius={[0, 4, 4, 0]}>{comparisonData.specDiff.slice(0, 10).map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.diff >= 0 ? '#22c55e' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></div>
                     </Card>
                 </div>
             </div>
@@ -541,97 +502,42 @@ export default function Dashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <Card className="p-6 border-l-4 border-l-blue-500">
-                        <div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Volume Total</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.total.toLocaleString()}</h3></div><div className="p-3 bg-blue-50 rounded-full text-blue-600"><FileText size={24} /></div></div>
-                        {activeUnit === '104' ? stats.total > 0 && <p className="text-xs text-slate-400 mt-2">Filtrado por: 1º Atendimento e Obs.</p> : <p className="text-xs text-slate-400 mt-2">Excluindo Eletrocardiograma</p>}
-                    </Card>
-                    <Card className="p-6 border-l-4 border-l-green-500">
-                        <div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Especialidade</p><h3 className="text-xl font-bold text-slate-800 mt-2 truncate w-48" title={stats.bySpec[0]?.name}>{stats.bySpec[0]?.name || '-'}</h3><p className="text-sm text-green-600 font-medium">{stats.bySpec[0]?.value ? `${stats.bySpec[0].value.toLocaleString()} atendimentos` : 'N/A'}</p></div><div className="p-3 bg-green-50 rounded-full text-green-600"><Stethoscope size={24} /></div></div>
-                    </Card>
-                    <Card className="p-6 border-l-4 border-l-purple-500">
-                        <div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pico Mensal</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {name: '-'}).name}</h3><p className="text-sm text-purple-600 font-medium">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {value: 0}).value.toLocaleString()} atendimentos</p></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><Calendar size={24} /></div></div>
-                    </Card>
+                    <Card className="p-6 border-l-4 border-l-blue-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Volume Total</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.total.toLocaleString()}</h3></div><div className="p-3 bg-blue-50 rounded-full text-blue-600"><FileText size={24} /></div></div>{activeUnit === '104' ? stats.total > 0 && <p className="text-xs text-slate-400 mt-2">Filtrado por: 1º Atendimento e Obs.</p> : <p className="text-xs text-slate-400 mt-2">Excluindo Eletrocardiograma</p>}</Card>
+                    <Card className="p-6 border-l-4 border-l-green-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Especialidade</p><h3 className="text-xl font-bold text-slate-800 mt-2 truncate w-48" title={stats.bySpec[0]?.name}>{stats.bySpec[0]?.name || '-'}</h3><p className="text-sm text-green-600 font-medium">{stats.bySpec[0]?.value ? `${stats.bySpec[0].value.toLocaleString()} atendimentos` : 'N/A'}</p></div><div className="p-3 bg-green-50 rounded-full text-green-600"><Stethoscope size={24} /></div></div></Card>
+                    <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pico Mensal</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {name: '-'}).name}</h3><p className="text-sm text-purple-600 font-medium">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {value: 0}).value.toLocaleString()} atendimentos</p></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><Calendar size={24} /></div></div></Card>
                 </div>
 
-                {/* Linha 1: Evolução e Especialidade */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     <Card className="p-6">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Evolução Mensal</h3><ExportWidget targetId="chart-evolucao" fileName="evolucao_mensal" /></div>
                         <div id="chart-evolucao" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><LineChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="value" name="Atendimentos" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4, fill: '#0ea5e9', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer></div>
                     </Card>
                     <Card className="p-6">
-                        <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
-                        <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]}>{stats.bySpec.slice(0, 10).map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Bar></BarChart></ResponsiveContainer></div>
+                        <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade (Clique para Filtrar)</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
+                        {/* ADICIONADO CLICK NO GRÁFICO */}
+                        <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">{stats.bySpec.slice(0, 10).map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Bar></BarChart></ResponsiveContainer></div>
                     </Card>
                 </div>
 
-                {/* Linha 2: DEMOGRAFIA (NOVO) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                     <Card className="p-6 lg:col-span-1">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Faixa Etária</h3><ExportWidget targetId="chart-age" fileName="faixa_etaria" /></div>
-                        <div id="chart-age" className="h-64 w-full bg-white p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                                        {stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                    </Pie>
-                                    <RechartsTooltip />
-                                    <Legend verticalAlign="bottom" height={36}/>
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
+                        <div id="chart-age" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}>{stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend verticalAlign="bottom" height={36}/></PieChart></ResponsiveContainer></div>
                     </Card>
                     <Card className="p-6 lg:col-span-2">
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade (Top 10)</h3><ExportWidget targetId="chart-city" fileName="top_cidades" /></div>
-                        <div id="chart-city" className="h-64 w-full bg-white p-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={stats.byCity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
-                                    <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
-                                    <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
-                                    <Bar dataKey="value" name="Pacientes" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
+                        <div id="chart-city" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart data={stats.byCity} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} /><Bar dataKey="value" name="Pacientes" fill="#0ea5e9" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
                     </Card>
                 </div>
 
-                {/* MATRIZ HOSPITALAR */}
+                {/* MATRIZ HOSPITALAR E TABELA FINAL (SEM ALTERAÇÕES) */}
                 {activeUnit === '104' && (
                     <Card className="p-0 border-t-4 border-t-blue-600 mb-8 overflow-hidden">
-                        <div className="p-6 pb-4 bg-white flex justify-between items-center">
-                            <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div>
-                            <ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} />
-                        </div>
-                        <div className="overflow-x-auto">
-                            <div id="table-matriz" className="max-h-96 overflow-y-auto bg-white">
-                                <table className="w-full text-xs text-left text-slate-600 border-collapse">
-                                    <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
-                                        <tr>
-                                            <th className="px-4 py-3 font-bold border-b border-slate-200">Especialidade</th>
-                                            {MONTH_NAMES.map(m => <th key={m} className="px-2 py-3 font-bold border-b border-slate-200 text-center">{m}</th>)}
-                                            <th className="px-4 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {stats.hospitalMatrixData.map((row, idx) => (
-                                            <tr key={idx} className="bg-white hover:bg-slate-50 transition-colors">
-                                                <td className="px-4 py-2 font-medium text-slate-900 border-r border-slate-100">{row.spec}</td>
-                                                {MONTH_NAMES.map((_, i) => (
-                                                    <td key={i} className="px-2 py-2 text-center border-r border-slate-100"><div className="flex flex-col"><span className={row[i+1].total > 0 ? "font-bold text-slate-700" : "text-slate-300"}>{row[i+1].total}</span>{row[i+1].obs > 0 && <span className="text-[10px] text-amber-600">({row[i+1].obs} obs)</span>}</div></td>
-                                                ))}
-                                                <td className="px-4 py-2 text-right font-bold text-slate-900 bg-slate-50">{row.totalGeral}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                        <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div><ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} /></div>
+                        <div className="overflow-x-auto"><div id="table-matriz" className="max-h-96 overflow-y-auto bg-white"><table className="w-full text-xs text-left text-slate-600 border-collapse"><thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10"><tr><th className="px-4 py-3 font-bold border-b border-slate-200">Especialidade</th>{MONTH_NAMES.map(m => <th key={m} className="px-2 py-3 font-bold border-b border-slate-200 text-center">{m}</th>)}<th className="px-4 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.hospitalMatrixData.map((row, idx) => (<tr key={idx} className="bg-white hover:bg-slate-50 transition-colors"><td className="px-4 py-2 font-medium text-slate-900 border-r border-slate-100">{row.spec}</td>{MONTH_NAMES.map((_, i) => (<td key={i} className="px-2 py-2 text-center border-r border-slate-100"><div className="flex flex-col"><span className={row[i+1].total > 0 ? "font-bold text-slate-700" : "text-slate-300"}>{row[i+1].total}</span>{row[i+1].obs > 0 && <span className="text-[10px] text-amber-600">({row[i+1].obs} obs)</span>}</div></td>))}<td className="px-4 py-2 text-right font-bold text-slate-900 bg-slate-50">{row.totalGeral}</td></tr>))}</tbody></table></div></div>
                     </Card>
                 )}
-
-                {/* Gráfico Produtividade */}
+                
                 {activeUnit === '104' && (
                     <Card className="p-6 mb-8">
                         <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><User size={20} className="text-slate-400" /> Produtividade por Profissional (Top 20)</h3>
@@ -639,39 +545,9 @@ export default function Dashboard() {
                     </Card>
                 )}
 
-                {/* Tabela Final */}
                 <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
-                    <div className="p-6 pb-4 bg-white flex justify-between items-center">
-                        <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3><p className="text-sm text-slate-500 mt-1">Detalhamento de dias trabalhados e produtividade</p></div>
-                        <ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} />
-                    </div>
-                    <div className="overflow-x-auto">
-                        <div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white">
-                            <table className="w-full text-sm text-left text-slate-600">
-                                <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="px-6 py-3 font-bold border-b border-slate-200">Profissional</th>
-                                        <th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Dias Trab.</th>
-                                        <th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Média/Dia</th>
-                                        {activeUnit === '104' ? (<><th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-blue-50 text-blue-800">1º Atend.</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-amber-50 text-amber-800">Observação</th></>) : null}
-                                        <th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total Geral</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {stats.allProfs.map((prof, index) => (
-                                        <tr key={index} className="bg-white hover:bg-slate-50 transition-colors nao-cortar">
-                                            <td className="px-6 py-3 font-medium text-slate-900 whitespace-nowrap">{prof.name}</td>
-                                            <td className="px-6 py-3 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td>
-                                            <td className="px-6 py-3 text-center text-slate-500">{prof.avgPerDay.toLocaleString()}</td>
-                                            {activeUnit === '104' && (<><td className="px-6 py-3 text-right font-medium text-blue-600 bg-blue-50/30">{(prof['Primeiro atendimento'] || 0).toLocaleString()}</td><td className="px-6 py-3 text-right font-medium text-amber-600 bg-amber-50/30">{(prof['Pacientes em observação'] || 0).toLocaleString()}</td></>)}
-                                            <td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td>
-                                        </tr>
-                                    ))}
-                                    {stats.allProfs.length === 0 && (<tr><td colSpan={activeUnit === '104' ? 6 : 4} className="px-6 py-8 text-center text-slate-400">Nenhum profissional encontrado com os filtros atuais.</td></tr>)}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3><p className="text-sm text-slate-500 mt-1">Detalhamento de dias trabalhados e produtividade</p></div><ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} /></div>
+                    <div className="overflow-x-auto"><div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white"><table className="w-full text-sm text-left text-slate-600"><thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10"><tr><th className="px-6 py-3 font-bold border-b border-slate-200">Profissional</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Dias Trab.</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Média/Dia</th>{activeUnit === '104' ? (<><th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-blue-50 text-blue-800">1º Atend.</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-amber-50 text-amber-800">Observação</th></>) : null}<th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total Geral</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.allProfs.map((prof, index) => (<tr key={index} className="bg-white hover:bg-slate-50 transition-colors nao-cortar"><td className="px-6 py-3 font-medium text-slate-900 whitespace-nowrap">{prof.name}</td><td className="px-6 py-3 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td><td className="px-6 py-3 text-center text-slate-500">{prof.avgPerDay.toLocaleString()}</td>{activeUnit === '104' && (<><td className="px-6 py-3 text-right font-medium text-blue-600 bg-blue-50/30">{(prof['Primeiro atendimento'] || 0).toLocaleString()}</td><td className="px-6 py-3 text-right font-medium text-amber-600 bg-amber-50/30">{(prof['Pacientes em observação'] || 0).toLocaleString()}</td></>)}<td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td></tr>))}{stats.allProfs.length === 0 && (<tr><td colSpan={activeUnit === '104' ? 6 : 4} className="px-6 py-8 text-center text-slate-400">Nenhum profissional encontrado com os filtros atuais.</td></tr>)}</tbody></table></div></div>
                 </Card>
                 <footer className="mt-12 py-6 border-t border-slate-200 text-center"><p className="text-slate-600 font-medium">Desenvolvido por <strong className="text-blue-700">Leandro de Paula Rodrigues - Vivver Sistemas</strong></p><p className="text-xs text-slate-400 mt-1">Relatório gerado automaticamente • {new Date().toLocaleDateString()}</p></footer>
             </div>
