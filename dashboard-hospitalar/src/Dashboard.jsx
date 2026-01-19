@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, ChevronDown, X, Check, Table, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, AlertTriangle, Search
+  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, AlertTriangle, Search, Sun, Moon
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -28,6 +28,8 @@ const HOSPITAL_PROCEDURE_MAP = {
   '301060096': 'Primeiro atendimento', '0301060096': 'Primeiro atendimento', '9999999984': 'Primeiro atendimento', 
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
+
+const OBS_CODES = ['301060029', '0301060029', '9990000096']; // Códigos considerados observação
 
 const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
@@ -55,17 +57,15 @@ const DEMAND_ALIASES = {
   age: ['idade', 'dt_nascimento', 'data_nascimento']
 };
 
-// --- HELPERS DE TEXTO (CORRIGIDO V3) ---
+// --- HELPERS DE TEXTO (V3) ---
 const fixEncoding = (str) => {
   if (str === null || str === undefined) return "";
   let newStr = String(str);
   
-  // 1. Correções visuais específicas (Baseado nos seus prints)
-  // Essas são aplicadas PRIMEIRO para garantir que palavras específicas sejam consertadas
   const visualSpecifics = [
-      { find: /Á%‰/g, replace: "É" },         // Ex: MÁ%‰DICAS -> MÉDICAS
-      { find: /Á“/g, replace: "Ó" },          // Ex: AMBULATÁ“RIO -> AMBULATÓRIO
-      { find: /clÁnico/gi, replace: "clínico" }, // Correção contextual para não quebrar "Área"
+      { find: /Á%‰/g, replace: "É" },
+      { find: /Á“/g, replace: "Ó" },
+      { find: /clÁnico/gi, replace: "clínico" },
       { find: /REGULAÁ‡ÁO/g, replace: "REGULAÇÃO" },
       { find: /REGULAÃ‡ÃƒO/g, replace: "REGULAÇÃO" },
       { find: /ATENÁ‡ÁO/g, replace: "ATENÇÃO" },
@@ -77,14 +77,12 @@ const fixEncoding = (str) => {
      newStr = newStr.replace(find, replace);
   });
 
-  // 2. Correções Padrão (UTF-8 lido como Latin-1/Windows-1252)
   const standardReplacements = {
     'Ã©': 'é', 'Ã¡': 'á', 'Ã£': 'ã', 'Ã³': 'ó', 'Ã´': 'ô', 'Ãª': 'ê',
     'Ã§': 'ç', 'Ãº': 'ú', 'Ã­': 'í', 'Ã\xad': 'í', 'Ã ': 'à', 'Ã¢': 'â',
     'Ã¶': 'ö', 'Ã‰': 'É', 'Ãƒ': 'Ã', 'Ã…': 'Å', 'Ã“': 'Ó', 'Ã”': 'Ô',
     'Ã•': 'Õ', 'Ã‚': 'Â', 'Ã€': 'À', 'Ã': 'Á', 'Ã‡': 'Ç', 'Ãš': 'Ú',
     'ÃÍ': 'Í', 'Ã‘': 'Ñ', 'Âº': 'º', 'Â°': '°',
-    // Padrões residuais
     'Á‡': 'Ç', 'ÁŠ': 'Ê', 'Á+': 'Ã'
   };
 
@@ -93,7 +91,6 @@ const fixEncoding = (str) => {
          newStr = newStr.split(key).join(value);
      }
   }
-
   return newStr.trim();
 };
 
@@ -104,6 +101,17 @@ const normalizeHeader = (header, aliasMap = COLUMN_ALIASES) => {
     if (aliases.some(alias => cleanHeader.toLowerCase() === alias.toLowerCase())) return key;
   }
   return cleanHeader; 
+};
+
+// --- FUNÇÃO DE PLANTÃO ---
+const getShift = (timeStr) => {
+    if (!timeStr) return 'Indefinido';
+    const hour = parseInt(timeStr.split(':')[0], 10);
+    if (isNaN(hour)) return 'Indefinido';
+    // Diurno: 07:00 as 18:59 (>= 7 e <= 18)
+    if (hour >= 7 && hour <= 18) return 'Diurno';
+    // Noturno: 19:00 as 06:59
+    return 'Noturno';
 };
 
 // --- COMPONENTES UI ---
@@ -131,7 +139,6 @@ const MultiSelect = ({ label, options = [], selectedValues = [], onChange, place
 
   const toggleOption = (value) => { const newSelected = selectedValues.includes(value) ? selectedValues.filter(v => v !== value) : [...selectedValues, value]; onChange(newSelected); };
   const handleSelectAll = () => { if (selectedValues.length === options.length) onChange([]); else onChange(options.map(o => o.value)); };
-
   const filteredOptions = options.filter(opt => opt.label.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
@@ -143,26 +150,17 @@ const MultiSelect = ({ label, options = [], selectedValues = [], onChange, place
       </button>
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-          {/* CAMPO DE BUSCA */}
           <div className="p-2 border-b border-slate-100 sticky top-0 bg-white z-20">
              <div className="relative">
                 <Search size={14} className="absolute left-2 top-2.5 text-slate-400" />
-                <input 
-                  type="text" 
-                  value={searchTerm} 
-                  onChange={e => setSearchTerm(e.target.value)} 
-                  className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:border-blue-400" 
-                  placeholder="Buscar..." 
-                />
+                <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:border-blue-400" placeholder="Buscar..." />
              </div>
           </div>
-          
           {filteredOptions.length > 0 && (
              <div onClick={handleSelectAll} className="px-3 py-2 border-b border-slate-100 hover:bg-slate-50 cursor-pointer flex items-center gap-2 text-xs font-bold text-blue-600 bg-slate-50">
               {selectedValues.length === options.length ? "Desmarcar Todos" : "Marcar Todos (Visíveis)"}
             </div>
           )}
-          
           {filteredOptions.length === 0 ? <div className="p-3 text-sm text-slate-400 text-center">Nenhuma opção encontrada</div> : 
             filteredOptions.map((opt) => (
               <div key={opt.value} onClick={() => toggleOption(opt.value)} className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-2 text-sm text-slate-700 border-b border-slate-50 last:border-0">
@@ -183,13 +181,12 @@ const MultiSelect = ({ label, options = [], selectedValues = [], onChange, place
 const generateMockData = () => {
   const mock = [];
   const specs = ['Clínico Geral', 'Pediatria', 'Ortopedia', 'Cardiologia', 'Dermatologia'];
-  
   ['2024', '2025'].forEach(year => {
     for(let i=0; i<600; i++) {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
         const day = Math.floor(Math.random() * 28) + 1;
-        const hour = Math.floor(Math.random() * (18 - 7 + 1)) + 7;
+        const hour = Math.floor(Math.random() * (23 - 0 + 1)) + 0; // 00h as 23h
         const min = Math.random() > 0.5 ? '30' : '00';
         const dateObj = new Date(Number(year), month - 1, day);
         
@@ -252,15 +249,6 @@ const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
   );
 };
 
-// --- HELPER CORES PRIORIDADE ---
-const getPriorityColor = (name) => {
-    const n = (name || '').toUpperCase();
-    if (n.includes('P1')) return '#ef4444'; // Vermelho
-    if (n.includes('P2')) return '#eab308'; // Amarelo
-    if (n.includes('P3')) return '#22c55e'; // Verde
-    return COLORS[Math.floor(Math.random() * COLORS.length)]; 
-};
-
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('atendimentos');
   const [reportTitle, setReportTitle] = useState('Painel de Gestão Hospitalar');
@@ -285,12 +273,7 @@ export default function Dashboard() {
 
   // --- STATES DEMANDA REPRIMIDA ---
   const [demandData, setDemandData] = useState([]);
-  const [demandFilters, setDemandFilters] = useState({
-     services: [],
-     procedures: [],
-     year: 'all',
-     months: []
-  });
+  const [demandFilters, setDemandFilters] = useState({ services: [], procedures: [], year: 'all', months: [] });
 
   useEffect(() => { 
       try { setRawData(generateMockData()); } catch (e) { console.error("Erro ao gerar dados:", e); }
@@ -304,7 +287,6 @@ export default function Dashboard() {
     setCompYear1(val);
     if (val > compYear2) setCompYear2(val);
   };
-
   const handleCompYear2Change = (e) => {
     const val = e.target.value;
     setCompYear2(val);
@@ -500,11 +482,14 @@ export default function Dashboard() {
     const total = filteredData.length;
     const byMonthObj = {}; const bySpecObj = {}; const byProfObj = {}; const byCityObj = {}; const byAgeObj = {};
     const byWeekDayObj = {}; const byHourObj = {};
+    const matrixMap = new Map(); // Mapa para a Matriz de Atendimentos (CORREÇÃO AQUI)
+
     for (let i = 1; i <= 12; i++) byMonthObj[i] = 0;
     WEEK_DAYS.forEach(d => byWeekDayObj[d] = 0);
     for (let h = 0; h < 24; h++) byHourObj[h] = 0;
 
     filteredData.forEach(item => {
+      // --- Contadores Básicos ---
       if (item.mes_final >= 1 && item.mes_final <= 12) byMonthObj[item.mes_final] += 1;
       if (item.dateObj && !isNaN(item.dateObj)) {
           const dayName = WEEK_DAYS[item.dateObj.getDay()];
@@ -517,13 +502,45 @@ export default function Dashboard() {
       const spec = item.spec || "Não informado"; bySpecObj[spec] = (bySpecObj[spec] || 0) + 1;
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
+      
+      // --- Lógica da Matriz de Atendimentos (RESTAURADA) ---
+      if (activeUnit === '104') {
+        const specName = item.spec || "Não informado";
+        if (!matrixMap.has(specName)) {
+            // Inicializa os 12 meses para esta especialidade
+            const monthData = {};
+            for (let i = 1; i <= 12; i++) monthData[i] = { total: 0, obs: 0 };
+            matrixMap.set(specName, { spec: specName, months: monthData, totalGeral: 0 });
+        }
+        
+        const specData = matrixMap.get(specName);
+        const m = item.mes_final;
+        if (m >= 1 && m <= 12) {
+            specData.months[m].total += 1;
+            specData.totalGeral += 1;
+            if (OBS_CODES.includes(String(item.procCode))) {
+                specData.months[m].obs += 1;
+            }
+        }
+      }
+      // ----------------------------------------------------
+
+      // --- Lógica de Profissionais e Plantão ---
       const prof = item.prof || "Não informado";
-      if (!byProfObj[prof]) byProfObj[prof] = { name: prof, total: 0, days: new Set() };
+      if (!byProfObj[prof]) {
+          byProfObj[prof] = { name: prof, total: 0, days: new Set(), diurno_atend: 0, diurno_obs: 0, noturno_atend: 0, noturno_obs: 0 };
+      }
       if (activeUnit === '104') byProfObj[prof][item.display_procedure] = (byProfObj[prof][item.display_procedure] || 0) + 1;
       byProfObj[prof].total += 1;
       if (item.date) byProfObj[prof].days.add(item.date);
+
+      const shift = getShift(item.time);
+      const isObs = OBS_CODES.includes(String(item.procCode));
+      if (shift === 'Diurno') { isObs ? byProfObj[prof].diurno_obs++ : byProfObj[prof].diurno_atend++; } 
+      else if (shift === 'Noturno') { isObs ? byProfObj[prof].noturno_obs++ : byProfObj[prof].noturno_atend++; }
     });
 
+    // --- Formatação Final dos Dados ---
     const byMonth = Object.keys(byMonthObj).map(m => ({ name: MONTH_NAMES[parseInt(m)-1], index: parseInt(m), value: byMonthObj[m] })).sort((a, b) => a.index - b.index);
     const bySpec = Object.keys(bySpecObj).map(k => ({ name: k, value: bySpecObj[k] })).sort((a, b) => b.value - a.value);
     const byCity = Object.keys(byCityObj).map(k => ({ name: k, value: byCityObj[k], percent: total > 0 ? ((byCityObj[k]/total)*100).toFixed(1) : 0 })).sort((a, b) => b.value - a.value);
@@ -532,22 +549,19 @@ export default function Dashboard() {
     const byWeekDay = WEEK_DAYS.map(d => ({ name: d, value: byWeekDayObj[d] }));
     const byHour = Object.keys(byHourObj).map(h => ({ name: `${h}h`, value: byHourObj[h] }));
 
-    const hospitalMatrixData = [];
-    if (activeUnit === '104') {
-        new Set(Object.keys(bySpecObj)).forEach(spec => {
-            const row = { spec }; let totalSpec = 0; for(let i=1; i<=12; i++) row[i] = { total: 0, obs: 0 };
-            filteredData.filter(d => (d.spec || "Não informado") === spec).forEach(d => {
-                if(d.mes_final >= 1 && d.mes_final <= 12) {
-                    row[d.mes_final].total += 1; totalSpec += 1;
-                    if(['301060029','0301060029','9990000096'].includes(String(d.procCode))) row[d.mes_final].obs += 1;
-                }
-            });
-            row.totalGeral = totalSpec; hospitalMatrixData.push(row);
+    // --- Finaliza os dados da Matriz (CORREÇÃO AQUI) ---
+    const hospitalMatrixData = Array.from(matrixMap.values()).map(item => {
+        const row = { spec: item.spec, totalGeral: item.totalGeral };
+        // Achata o objeto months para dentro da linha (ex: row[1], row[2]...)
+        Object.entries(item.months).forEach(([monthIdx, data]) => {
+            row[monthIdx] = data;
         });
-        hospitalMatrixData.sort((a, b) => b.totalGeral - a.totalGeral);
-    }
+        return row;
+    }).sort((a, b) => b.totalGeral - a.totalGeral);
+    // ----------------------------------------------------
+
     const profKeys = new Set();
-    allProfs.slice(0, 20).forEach(p => { Object.keys(p).forEach(k => { if (!['name', 'total', 'days', 'daysCount', 'avgPerDay'].includes(k)) profKeys.add(k); }); });
+    allProfs.slice(0, 20).forEach(p => { Object.keys(p).forEach(k => { if (!['name', 'total', 'days', 'daysCount', 'avgPerDay', 'diurno_atend', 'diurno_obs', 'noturno_atend', 'noturno_obs'].includes(k)) profKeys.add(k); }); });
 
     return { total, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
@@ -633,10 +647,7 @@ export default function Dashboard() {
           
           const pCode = item.procCode || 'N/A';
           const pName = item.procedure || 'Outros';
-          // Se for especializada, agrupa por CBO também na tabela
-          const pKey = isSpecializedSelected 
-              ? `${pCode}|${pName}|${cbo}` 
-              : `${pCode}|${pName}`;
+          const pKey = isSpecializedSelected ? `${pCode}|${pName}|${cbo}` : `${pCode}|${pName}`;
           
           if (!byProcedure[pKey]) {
               byProcedure[pKey] = { code: pCode, name: pName, cbo: cbo, count: 0 };
@@ -648,14 +659,10 @@ export default function Dashboard() {
       });
 
       const avgWait = countWait > 0 ? Math.round(totalWait / countWait) : 0;
-      
       const serviceChart = Object.keys(byService).map(k => ({ name: k, value: byService[k] })).sort((a,b) => b.value - a.value);
       const cboChart = Object.keys(byCbo).map(k => ({ name: k, value: byCbo[k] })).sort((a,b) => b.value - a.value);
-      
       const unitChart = Object.keys(byUnit).map(k => ({ name: k, value: byUnit[k] })).sort((a,b) => b.value - a.value);
       const procedureTable = Object.values(byProcedure).sort((a,b) => b.count - a.count);
-
-      // Decide qual gráfico retornar baseado no filtro
       const mainChart = isSpecializedSelected ? cboChart : serviceChart;
 
       return { total, avgWait, mainChart, unitChart, procedureTable };
@@ -1037,10 +1044,39 @@ export default function Dashboard() {
                        </Card>
                    </div>
 
+                   {/* --- MATRIZ DE ATENDIMENTOS (CORRIGIDA) --- */}
                    {activeUnit === '104' && (
                        <Card className="p-0 border-t-4 border-t-blue-600 mb-8 overflow-hidden">
                            <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div><ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} /></div>
-                           <div className="overflow-x-auto"><div id="table-matriz" className="max-h-96 overflow-y-auto bg-white"><table className="w-full text-xs text-left text-slate-600 border-collapse"><thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10"><tr><th className="px-4 py-3 font-bold border-b border-slate-200">Especialidade</th>{MONTH_NAMES.map(m => <th key={m} className="px-2 py-3 font-bold border-b border-slate-200 text-center">{m}</th>)}<th className="px-4 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.hospitalMatrixData.map((row, idx) => (<tr key={idx} className="bg-white hover:bg-slate-50 transition-colors"><td className="px-4 py-2 font-medium text-slate-900 border-r border-slate-100">{row.spec}</td>{MONTH_NAMES.map((_, i) => (<td key={i} className="px-2 py-2 text-center border-r border-slate-100"><div className="flex flex-col"><span className={row[i+1].total > 0 ? "font-bold text-slate-700" : "text-slate-300"}>{row[i+1].total}</span>{row[i+1].obs > 0 && <span className="text-[10px] text-amber-600">({row[i+1].obs} obs)</span>}</div></td>))}<td className="px-4 py-2 text-right font-bold text-slate-900 bg-slate-50">{row.totalGeral}</td></tr>))}</tbody></table></div></div>
+                           <div className="overflow-x-auto">
+                               <div id="table-matriz" className="max-h-96 overflow-y-auto bg-white">
+                                   <table className="w-full text-xs text-left text-slate-600 border-collapse">
+                                       <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
+                                           <tr>
+                                               <th className="px-4 py-3 font-bold border-b border-slate-200 text-left">Especialidade</th>
+                                               {MONTH_NAMES.map(m => <th key={m} className="px-2 py-3 font-bold border-b border-slate-200 text-center">{m}</th>)}
+                                               <th className="px-4 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total</th>
+                                           </tr>
+                                       </thead>
+                                       <tbody className="divide-y divide-slate-100">
+                                           {stats.hospitalMatrixData.map((row, idx) => (
+                                               <tr key={idx} className="bg-white hover:bg-slate-50 transition-colors">
+                                                   <td className="px-4 py-2 font-medium text-slate-900 border-r border-slate-100 text-left">{row.spec}</td>
+                                                   {MONTH_NAMES.map((_, i) => (
+                                                       <td key={i} className="px-2 py-2 text-center border-r border-slate-100">
+                                                           <div className="flex flex-col items-center justify-center">
+                                                               <span className={row[i+1].total > 0 ? "font-bold text-slate-700" : "text-slate-300"}>{row[i+1].total}</span>
+                                                               {row[i+1].obs > 0 && <span className="text-[10px] text-amber-600">({row[i+1].obs} obs)</span>}
+                                                           </div>
+                                                       </td>
+                                                   ))}
+                                                   <td className="px-4 py-2 text-right font-bold text-slate-900 bg-slate-50">{row.totalGeral}</td>
+                                               </tr>
+                                           ))}
+                                       </tbody>
+                                   </table>
+                               </div>
+                           </div>
                        </Card>
                    )}
                    
@@ -1051,9 +1087,74 @@ export default function Dashboard() {
                        </Card>
                    )}
 
+                   {/* --- TABELA DE PRODUTIVIDADE (CORRIGIDA) --- */}
                    <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
-                       <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3><p className="text-sm text-slate-500 mt-1">Detalhamento de dias trabalhados e produtividade</p></div><ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} /></div>
-                       <div className="overflow-x-auto"><div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white"><table className="w-full text-sm text-left text-slate-600"><thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10"><tr><th className="px-6 py-3 font-bold border-b border-slate-200">Profissional</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Dias Trab.</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-center">Média/Dia</th>{activeUnit === '104' ? (<><th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-blue-50 text-blue-800">1º Atend.</th><th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-amber-50 text-amber-800">Observação</th></>) : null}<th className="px-6 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total Geral</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.allProfs.map((prof, index) => (<tr key={index} className="bg-white hover:bg-slate-50 transition-colors nao-cortar"><td className="px-6 py-3 font-medium text-slate-900 whitespace-nowrap">{prof.name}</td><td className="px-6 py-3 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td><td className="px-6 py-3 text-center text-slate-500">{prof.avgPerDay.toLocaleString()}</td>{activeUnit === '104' && (<><td className="px-6 py-3 text-right font-medium text-blue-600 bg-blue-50/30">{(prof['Primeiro atendimento'] || 0).toLocaleString()}</td><td className="px-6 py-3 text-right font-medium text-amber-600 bg-amber-50/30">{(prof['Pacientes em observação'] || 0).toLocaleString()}</td></>)}<td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td></tr>))}{stats.allProfs.length === 0 && (<tr><td colSpan={activeUnit === '104' ? 6 : 4} className="px-6 py-8 text-center text-slate-400">Nenhum profissional encontrado com os filtros atuais.</td></tr>)}</tbody></table></div></div>
+                       <div className="p-6 pb-4 bg-white flex justify-between items-center">
+                           <div>
+                               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3>
+                               <p className="text-sm text-slate-500 mt-1">Detalhamento por turno (Diurno: 07h-18h59 | Noturno: 19h-06h59)</p>
+                           </div>
+                           <ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} />
+                       </div>
+                       <div className="overflow-x-auto">
+                           <div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white">
+                               <table className="w-full text-sm text-left text-slate-600 border-collapse">
+                                   <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
+                                       <tr>
+                                           <th rowSpan="2" className="px-6 py-3 font-bold border-b border-r border-slate-200 align-middle text-left">Profissional</th>
+                                           <th rowSpan="2" className="px-4 py-3 font-bold border-b border-r border-slate-200 text-center align-middle">Dias</th>
+                                           <th rowSpan="2" className="px-4 py-3 font-bold border-b border-r border-slate-200 text-center align-middle">Média/Dia</th>
+                                           
+                                           {activeUnit === '104' && (
+                                               <>
+                                                   <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-sky-50 text-sky-800">
+                                                       <div className="flex items-center justify-center gap-1"><Sun size={14}/> Plantão Diurno</div>
+                                                   </th>
+                                                   <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-indigo-50 text-indigo-800">
+                                                       <div className="flex items-center justify-center gap-1"><Moon size={14}/> Plantão Noturno</div>
+                                                   </th>
+                                               </>
+                                           )}
+                                           
+                                           <th rowSpan="2" className="px-6 py-3 font-bold border-b border-slate-200 text-right align-middle bg-slate-200">Total Geral</th>
+                                       </tr>
+                                       {activeUnit === '104' && (
+                                           <tr>
+                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">1º Atend.</th>
+                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">Obs.</th>
+                                               
+                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">1º Atend.</th>
+                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">Obs.</th>
+                                           </tr>
+                                       )}
+                                   </thead>
+                                   <tbody className="divide-y divide-slate-100">
+                                       {stats.allProfs.map((prof, index) => (
+                                           <tr key={index} className="bg-white hover:bg-slate-50 transition-colors nao-cortar">
+                                               <td className="px-6 py-3 font-medium text-slate-900 whitespace-nowrap border-r border-slate-100 text-left">{prof.name}</td>
+                                               <td className="px-4 py-3 text-center border-r border-slate-100"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td>
+                                               <td className="px-4 py-3 text-center text-slate-500 border-r border-slate-100">{prof.avgPerDay.toLocaleString()}</td>
+                                               
+                                               {activeUnit === '104' && (
+                                                   <>
+                                                       <td className="px-4 py-3 text-right font-medium text-sky-700 bg-sky-50/20 border-r border-sky-100">{prof.diurno_atend > 0 ? prof.diurno_atend : '-'}</td>
+                                                       <td className="px-4 py-3 text-right font-medium text-amber-600 bg-sky-50/20 border-r border-slate-200">{prof.diurno_obs > 0 ? prof.diurno_obs : '-'}</td>
+                                                       
+                                                       <td className="px-4 py-3 text-right font-medium text-indigo-700 bg-indigo-50/20 border-r border-indigo-100">{prof.noturno_atend > 0 ? prof.noturno_atend : '-'}</td>
+                                                       <td className="px-4 py-3 text-right font-medium text-amber-600 bg-indigo-50/20 border-r border-slate-200">{prof.noturno_obs > 0 ? prof.noturno_obs : '-'}</td>
+                                                   </>
+                                               )}
+                                               
+                                               <td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td>
+                                           </tr>
+                                       ))}
+                                       {stats.allProfs.length === 0 && (
+                                           <tr><td colSpan={activeUnit === '104' ? 8 : 4} className="px-6 py-8 text-center text-slate-400">Nenhum profissional encontrado com os filtros atuais.</td></tr>
+                                       )}
+                                   </tbody>
+                               </table>
+                           </div>
+                       </div>
                    </Card>
                </div>
            )}
