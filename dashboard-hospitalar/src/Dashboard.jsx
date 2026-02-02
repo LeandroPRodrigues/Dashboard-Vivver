@@ -5,13 +5,16 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, ChevronDown, X, Check, Table, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, AlertTriangle, Search, Sun, Moon
+  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, AlertTriangle, Search, Sun, Moon, Trash2
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 
 // --- CONFIGURAÇÃO DE CORES E CONSTANTES ---
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
+// Cores específicas para anos na comparação (para manter consistência visual)
+const YEAR_COLORS = ['#94a3b8', '#60a5fa', '#3b82f6', '#1d4ed8', '#1e3a8a']; 
+
 const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const WEEK_DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
@@ -29,7 +32,7 @@ const HOSPITAL_PROCEDURE_MAP = {
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
 
-const OBS_CODES = ['301060029', '0301060029', '9990000096']; // Códigos considerados observação
+const OBS_CODES = ['301060029', '0301060029', '9990000096']; 
 
 const COLUMN_ALIASES = {
   unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
@@ -57,7 +60,7 @@ const DEMAND_ALIASES = {
   age: ['idade', 'dt_nascimento', 'data_nascimento']
 };
 
-// --- HELPERS DE TEXTO (V3) ---
+// --- HELPERS DE TEXTO ---
 const fixEncoding = (str) => {
   if (str === null || str === undefined) return "";
   let newStr = String(str);
@@ -103,14 +106,11 @@ const normalizeHeader = (header, aliasMap = COLUMN_ALIASES) => {
   return cleanHeader; 
 };
 
-// --- FUNÇÃO DE PLANTÃO ---
 const getShift = (timeStr) => {
     if (!timeStr) return 'Indefinido';
     const hour = parseInt(timeStr.split(':')[0], 10);
     if (isNaN(hour)) return 'Indefinido';
-    // Diurno: 07:00 as 18:59 (>= 7 e <= 18)
     if (hour >= 7 && hour <= 18) return 'Diurno';
-    // Noturno: 19:00 as 06:59
     return 'Noturno';
 };
 
@@ -181,12 +181,12 @@ const MultiSelect = ({ label, options = [], selectedValues = [], onChange, place
 const generateMockData = () => {
   const mock = [];
   const specs = ['Clínico Geral', 'Pediatria', 'Ortopedia', 'Cardiologia', 'Dermatologia'];
-  ['2024', '2025'].forEach(year => {
+  ['2024', '2025', '2026'].forEach(year => {
     for(let i=0; i<600; i++) {
         const month = Math.floor(Math.random() * 12) + 1;
         const age = Math.floor(Math.random() * 80) + 1;
         const day = Math.floor(Math.random() * 28) + 1;
-        const hour = Math.floor(Math.random() * (23 - 0 + 1)) + 0; // 00h as 23h
+        const hour = Math.floor(Math.random() * (23 - 0 + 1)) + 0; 
         const min = Math.random() > 0.5 ? '30' : '00';
         const dateObj = new Date(Number(year), month - 1, day);
         
@@ -268,8 +268,8 @@ export default function Dashboard() {
   const [selectedProfs, setSelectedProfs] = useState([]); 
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  const [compYear1, setCompYear1] = useState('');
-  const [compYear2, setCompYear2] = useState('');
+  // --- COMPARAÇÃO MULTI-ANO ---
+  const [compYears, setCompYears] = useState([]);
 
   // --- STATES DEMANDA REPRIMIDA ---
   const [demandData, setDemandData] = useState([]);
@@ -280,18 +280,6 @@ export default function Dashboard() {
   }, []);
 
   const handlePrint = () => { window.print(); };
-
-  // --- LOGICA DE DATA COMPARACAO ---
-  const handleCompYear1Change = (e) => {
-    const val = e.target.value;
-    setCompYear1(val);
-    if (val > compYear2) setCompYear2(val);
-  };
-  const handleCompYear2Change = (e) => {
-    const val = e.target.value;
-    setCompYear2(val);
-    if (val < compYear1) setCompYear1(val);
-  };
 
   // --- MAPPING ATENDIMENTOS ---
   const availableUnits = useMemo(() => {
@@ -313,104 +301,148 @@ export default function Dashboard() {
   }, [rawData]);
 
   useEffect(() => { if (availableUnits.length > 0 && !availableUnits.find(u => u.code === activeUnit)) setActiveUnit(availableUnits[0].code); }, [availableUnits, activeUnit]);
-  useEffect(() => { if (availableYears.length >= 1) { setSelectedYear(availableYears[0]); setCompYear1(availableYears[availableYears.length - 1]); setCompYear2(availableYears[0]); } }, [availableYears]);
+  useEffect(() => { 
+      if (availableYears.length >= 1) { 
+          setSelectedYear(availableYears[0]);
+          // Inicializa comparação com os 2 (ou até 4) primeiros anos disponíveis
+          setCompYears(availableYears.slice(0, Math.min(4, availableYears.length))); 
+      } 
+  }, [availableYears]);
+
+  // --- FUNÇÃO PARA LIMPAR DADOS ---
+  const handleClearData = () => {
+      if(window.confirm("Tem certeza que deseja limpar todos os dados carregados?")) {
+          setRawData([]);
+          setDemandData([]);
+          setIsDemoData(true);
+          setReportTitle('Painel de Gestão Hospitalar');
+          try { setRawData(generateMockData()); } catch (e) {}
+      }
+  };
 
   // --- UPLOAD CSV ---
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  const handleFileUpload = async (event) => {
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
     setIsLoading(true);
-    const fileName = file.name;
 
-    const reader = new FileReader();
-    reader.readAsText(file, "ISO-8859-1");
-    reader.onload = (e) => {
-      const text = e.target.result;
-      if (!text) { setIsLoading(false); return; }
-      const rows = text.split(/\r?\n/);
-      if (rows.length < 2) { setIsLoading(false); return; }
-      
-      const firstLine = rows[0];
-      const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
-      const rawHeaders = rows[0].split(delimiter).map(h => h.trim().replace(/"/g, ''));
-      
-      const isDemanda = rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'reqDate') || 
-                        rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'unitRef');
+    const newAtendimentos = [];
+    const newDemanda = [];
+    let reportTitleUpdated = reportTitle;
 
-      if (isDemanda) {
-          const headerMap = rawHeaders.map(h => normalizeHeader(h, DEMAND_ALIASES));
-          const parsed = [];
-          const now = new Date();
-          for (let i = 1; i < rows.length; i++) {
-            if (!rows[i].trim()) continue;
-            const values = rows[i].split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`));
-            if (values.length >= rawHeaders.length - 1) {
-               const rowObj = {};
-               headerMap.forEach((key, index) => {
-                   if (values[index]) rowObj[key] = fixEncoding(values[index].replace(/"/g, '').trim());
-               });
-               if (rowObj.reqDate) {
-                  const parts = rowObj.reqDate.split('/');
-                  if (parts.length === 3) {
-                      let year = parseInt(parts[2]);
-                      if (year === 1900) year = 2025;
-                      const month = parseInt(parts[1]);
-                      const day = parseInt(parts[0]);
-                      const dt = new Date(year, month - 1, day);
-                      rowObj.dateObj = dt;
-                      rowObj.ano = String(year);
-                      rowObj.mes = month;
-                      const diffTime = Math.abs(now - dt);
-                      rowObj.waitDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                  }
-               }
-               parsed.push(rowObj);
-            }
-          }
-          setDemandData(parsed);
-          setActiveTab('demanda');
-          setReportTitle(`Painel de Demanda Reprimida - ${fileName.replace('.csv', '').replace(/_/g, ' ')}`);
-          setIsLoading(false);
-      } else {
-          const headerMap = rawHeaders.map(h => normalizeHeader(h, COLUMN_ALIASES)); 
-          const parsedData = [];
-          for (let i = 1; i < rows.length; i++) {
-            if (!rows[i].trim()) continue;
-            const values = rows[i].split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`));
-            if (values.length >= rawHeaders.length - 1) {
-              const rowObj = {};
-              headerMap.forEach((key, index) => {
-                if (values[index]) {
-                  let val = values[index].replace(/"/g, '').trim();
-                  if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) val = fixEncoding(val);
-                  if (key === 'time' && val.includes(' ')) {
-                      const parts = val.split(' ');
-                      if (parts[1] && parts[1].includes(':')) val = parts[1];
-                      else if (parts[0] && parts[0].includes(':')) val = parts[0];
-                  }
-                  rowObj[key] = val; 
+    const readFile = (file) => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsText(file, "ISO-8859-1");
+            reader.onload = (e) => {
+                const text = e.target.result;
+                if (!text) { resolve(); return; }
+                const rows = text.split(/\r?\n/);
+                if (rows.length < 2) { resolve(); return; }
+
+                const firstLine = rows[0];
+                const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+                const rawHeaders = rows[0].split(delimiter).map(h => h.trim().replace(/"/g, ''));
+
+                const isDemanda = rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'reqDate') || 
+                                  rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'unitRef');
+
+                if (isDemanda) {
+                    const headerMap = rawHeaders.map(h => normalizeHeader(h, DEMAND_ALIASES));
+                    const now = new Date();
+                    for (let i = 1; i < rows.length; i++) {
+                        if (!rows[i].trim()) continue;
+                        const values = rows[i].split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`));
+                        if (values.length >= rawHeaders.length - 1) {
+                            const rowObj = {};
+                            headerMap.forEach((key, index) => {
+                                if (values[index]) rowObj[key] = fixEncoding(values[index].replace(/"/g, '').trim());
+                            });
+                            if (rowObj.reqDate) {
+                                const parts = rowObj.reqDate.split('/');
+                                if (parts.length === 3) {
+                                    let year = parseInt(parts[2]);
+                                    if (year === 1900) year = 2025;
+                                    const month = parseInt(parts[1]);
+                                    const day = parseInt(parts[0]);
+                                    const dt = new Date(year, month - 1, day);
+                                    rowObj.dateObj = dt;
+                                    rowObj.ano = String(year);
+                                    rowObj.mes = month;
+                                    const diffTime = Math.abs(now - dt);
+                                    rowObj.waitDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                                }
+                            }
+                            newDemanda.push(rowObj);
+                        }
+                    }
+                    if (reportTitle === 'Painel de Gestão Hospitalar') {
+                        reportTitleUpdated = `Painel de Demanda Reprimida - ${file.name.replace('.csv', '').replace(/_/g, ' ')}`;
+                    }
+                } else {
+                    const headerMap = rawHeaders.map(h => normalizeHeader(h, COLUMN_ALIASES)); 
+                    for (let i = 1; i < rows.length; i++) {
+                        if (!rows[i].trim()) continue;
+                        const values = rows[i].split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`));
+                        if (values.length >= rawHeaders.length - 1) {
+                            const rowObj = {};
+                            headerMap.forEach((key, index) => {
+                                if (values[index]) {
+                                    let val = values[index].replace(/"/g, '').trim();
+                                    if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) val = fixEncoding(val);
+                                    if (key === 'time' && val.includes(' ')) {
+                                        const parts = val.split(' ');
+                                        if (parts[1] && parts[1].includes(':')) val = parts[1];
+                                        else if (parts[0] && parts[0].includes(':')) val = parts[0];
+                                    }
+                                    rowObj[key] = val; 
+                                }
+                            });
+                            let ano = 'N/A';
+                            let mes = 0;
+                            let dt = null;
+                            if (rowObj.date) {
+                                const parts = rowObj.date.split('/');
+                                if (parts.length === 3) { 
+                                    ano = parts[2]; mes = parseInt(parts[1]); dt = new Date(parts[2], parts[1]-1, parts[0]);
+                                }
+                            }
+                            rowObj.ano_final = ano; rowObj.mes_final = mes; rowObj.dateObj = dt;
+                            if (rowObj.age) {
+                                const age = parseInt(rowObj.age);
+                                rowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
+                            }
+                            newAtendimentos.push(rowObj);
+                        }
+                    }
                 }
-              });
-              let ano = 'N/A';
-              let mes = 0;
-              let dt = null;
-              if (rowObj.date) {
-                  const parts = rowObj.date.split('/');
-                  if (parts.length === 3) { 
-                    ano = parts[2]; mes = parseInt(parts[1]); dt = new Date(parts[2], parts[1]-1, parts[0]);
-                  }
-              }
-              rowObj.ano_final = ano; rowObj.mes_final = mes; rowObj.dateObj = dt;
-              if (rowObj.age) {
-                  const age = parseInt(rowObj.age);
-                  rowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
-              }
-              parsedData.push(rowObj);
-            }
-          }
-          setRawData(parsedData); setIsDemoData(false); setReportTitle('Painel de Gestão Hospitalar'); setActiveTab('atendimentos'); setIsLoading(false);
-      }
+                resolve();
+            };
+        });
     };
+
+    await Promise.all(files.map(readFile));
+
+    if (newAtendimentos.length > 0) {
+        setRawData(prev => {
+            const base = isDemoData ? [] : prev;
+            return [...base, ...newAtendimentos];
+        });
+        setIsDemoData(false);
+        if(!reportTitleUpdated.includes('Demanda')) setReportTitle('Painel de Gestão Hospitalar (Consolidado)');
+        setActiveTab('atendimentos');
+    }
+    
+    if (newDemanda.length > 0) {
+        setDemandData(prev => [...prev, ...newDemanda]);
+        if(newAtendimentos.length === 0) {
+             setActiveTab('demanda');
+             setReportTitle(reportTitleUpdated);
+        }
+    }
+
+    setIsLoading(false);
+    event.target.value = '';
   };
 
   // --- STATS ATENDIMENTOS ---
@@ -482,14 +514,13 @@ export default function Dashboard() {
     const total = filteredData.length;
     const byMonthObj = {}; const bySpecObj = {}; const byProfObj = {}; const byCityObj = {}; const byAgeObj = {};
     const byWeekDayObj = {}; const byHourObj = {};
-    const matrixMap = new Map(); // Mapa para a Matriz de Atendimentos (CORREÇÃO AQUI)
+    const matrixMap = new Map(); 
 
     for (let i = 1; i <= 12; i++) byMonthObj[i] = 0;
     WEEK_DAYS.forEach(d => byWeekDayObj[d] = 0);
     for (let h = 0; h < 24; h++) byHourObj[h] = 0;
 
     filteredData.forEach(item => {
-      // --- Contadores Básicos ---
       if (item.mes_final >= 1 && item.mes_final <= 12) byMonthObj[item.mes_final] += 1;
       if (item.dateObj && !isNaN(item.dateObj)) {
           const dayName = WEEK_DAYS[item.dateObj.getDay()];
@@ -503,16 +534,14 @@ export default function Dashboard() {
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
       
-      // --- Lógica da Matriz de Atendimentos (RESTAURADA) ---
+      // --- Lógica da Matriz ---
       if (activeUnit === '104') {
         const specName = item.spec || "Não informado";
         if (!matrixMap.has(specName)) {
-            // Inicializa os 12 meses para esta especialidade
             const monthData = {};
             for (let i = 1; i <= 12; i++) monthData[i] = { total: 0, obs: 0 };
             matrixMap.set(specName, { spec: specName, months: monthData, totalGeral: 0 });
         }
-        
         const specData = matrixMap.get(specName);
         const m = item.mes_final;
         if (m >= 1 && m <= 12) {
@@ -523,9 +552,8 @@ export default function Dashboard() {
             }
         }
       }
-      // ----------------------------------------------------
 
-      // --- Lógica de Profissionais e Plantão ---
+      // --- Lógica de Profissionais ---
       const prof = item.prof || "Não informado";
       if (!byProfObj[prof]) {
           byProfObj[prof] = { name: prof, total: 0, days: new Set(), diurno_atend: 0, diurno_obs: 0, noturno_atend: 0, noturno_obs: 0 };
@@ -540,7 +568,6 @@ export default function Dashboard() {
       else if (shift === 'Noturno') { isObs ? byProfObj[prof].noturno_obs++ : byProfObj[prof].noturno_atend++; }
     });
 
-    // --- Formatação Final dos Dados ---
     const byMonth = Object.keys(byMonthObj).map(m => ({ name: MONTH_NAMES[parseInt(m)-1], index: parseInt(m), value: byMonthObj[m] })).sort((a, b) => a.index - b.index);
     const bySpec = Object.keys(bySpecObj).map(k => ({ name: k, value: bySpecObj[k] })).sort((a, b) => b.value - a.value);
     const byCity = Object.keys(byCityObj).map(k => ({ name: k, value: byCityObj[k], percent: total > 0 ? ((byCityObj[k]/total)*100).toFixed(1) : 0 })).sort((a, b) => b.value - a.value);
@@ -549,16 +576,13 @@ export default function Dashboard() {
     const byWeekDay = WEEK_DAYS.map(d => ({ name: d, value: byWeekDayObj[d] }));
     const byHour = Object.keys(byHourObj).map(h => ({ name: `${h}h`, value: byHourObj[h] }));
 
-    // --- Finaliza os dados da Matriz (CORREÇÃO AQUI) ---
     const hospitalMatrixData = Array.from(matrixMap.values()).map(item => {
         const row = { spec: item.spec, totalGeral: item.totalGeral };
-        // Achata o objeto months para dentro da linha (ex: row[1], row[2]...)
         Object.entries(item.months).forEach(([monthIdx, data]) => {
             row[monthIdx] = data;
         });
         return row;
     }).sort((a, b) => b.totalGeral - a.totalGeral);
-    // ----------------------------------------------------
 
     const profKeys = new Set();
     allProfs.slice(0, 20).forEach(p => { Object.keys(p).forEach(k => { if (!['name', 'total', 'days', 'daysCount', 'avgPerDay', 'diurno_atend', 'diurno_obs', 'noturno_atend', 'noturno_obs'].includes(k)) profKeys.add(k); }); });
@@ -566,8 +590,11 @@ export default function Dashboard() {
     return { total, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
+  // --- LOGICA DE COMPARAÇÃO MULTI-ANO ---
   const comparisonData = useMemo(() => {
-    if (!isComparisonMode || !compYear1 || !compYear2) return null;
+    if (!isComparisonMode || compYears.length === 0) return null;
+    
+    // Filtro Base
     const baseData = rawData
         .filter(item => String(item.unitCode || "").trim() === activeUnit)
         .map(item => {
@@ -577,26 +604,57 @@ export default function Dashboard() {
             return newItem;
         }).filter(item => item.isValid);
 
-    const filterByMonth = (d) => selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final));
-    const d1 = baseData.filter(d => d.ano_final === compYear1 && filterByMonth(d));
-    const d2 = baseData.filter(d => d.ano_final === compYear2 && filterByMonth(d));
-    const total1 = d1.length;
-    const total2 = d2.length;
-    const growth = total1 > 0 ? ((total2 - total1) / total1) * 100 : 0;
+    const sortedYears = [...compYears].sort(); // Ordena os anos selecionados (ex: 2024, 2025, 2026)
+    
+    // 1. Totais por Ano
+    const totals = {};
+    sortedYears.forEach(year => {
+        totals[year] = baseData.filter(d => d.ano_final === year && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length;
+    });
 
+    // 2. Cálculo do Crescimento (Último ano selecionado vs Primeiro ano selecionado)
+    let growth = 0;
+    if(sortedYears.length >= 2) {
+        const firstYear = sortedYears[0];
+        const lastYear = sortedYears[sortedYears.length - 1];
+        const v1 = totals[firstYear];
+        const v2 = totals[lastYear];
+        growth = v1 > 0 ? ((v2 - v1) / v1) * 100 : 0;
+    }
+
+    // 3. Comparativo Mensal (Linha)
     const monthlyComp = [];
     for(let i=1; i<=12; i++) {
         if (selectedMonths.length > 0 && !selectedMonths.includes(String(i))) continue;
-        monthlyComp.push({ name: MONTH_NAMES[i-1], [compYear1]: d1.filter(d => d.mes_final === i).length, [compYear2]: d2.filter(d => d.mes_final === i).length });
+        const row = { name: MONTH_NAMES[i-1] };
+        sortedYears.forEach(year => {
+            row[year] = baseData.filter(d => d.ano_final === year && d.mes_final === i).length;
+        });
+        monthlyComp.push(row);
     }
-    const allSpecs = new Set([...d1.map(d => d.spec), ...d2.map(d => d.spec)]);
-    const specDiff = Array.from(allSpecs).map(spec => {
-        const v1 = d1.filter(d => d.spec === spec).length;
-        const v2 = d2.filter(d => d.spec === spec).length;
-        return { name: spec || "N/I", v1, v2, diff: v2 - v1 };
-    }).sort((a, b) => b.diff - a.diff);
-    return { monthlyComp, specDiff, total1, total2, growth };
-  }, [isComparisonMode, compYear1, compYear2, activeUnit, rawData, selectedMonths]);
+
+    // 4. Comparativo por Especialidade (Top 10 Geral)
+    // Primeiro, descobre as Top 10 specs somando todos os anos selecionados
+    const specTotals = {};
+    baseData.forEach(d => {
+        if(sortedYears.includes(d.ano_final) && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))) {
+            const s = d.spec || "N/I";
+            specTotals[s] = (specTotals[s] || 0) + 1;
+        }
+    });
+    const topSpecs = Object.keys(specTotals).sort((a,b) => specTotals[b] - specTotals[a]).slice(0, 10);
+
+    // Monta o array para o gráfico
+    const specComp = topSpecs.map(spec => {
+        const row = { name: spec };
+        sortedYears.forEach(year => {
+            row[year] = baseData.filter(d => d.ano_final === year && d.spec === spec && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length;
+        });
+        return row;
+    });
+
+    return { totals, growth, monthlyComp, specComp, sortedYears };
+  }, [isComparisonMode, compYears, activeUnit, rawData, selectedMonths]);
 
   // --- LOGICA DEMANDA REPRIMIDA ---
   const isSpecializedSelected = useMemo(() => {
@@ -700,10 +758,16 @@ export default function Dashboard() {
                 </button>
             )}
 
+            {!isDemoData && (
+                <button onClick={handleClearData} title="Limpar todos os dados" className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-all shadow-sm border border-red-200">
+                    <Trash2 size={18}/> Limpar Dados
+                </button>
+            )}
+
             <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
               <label className="flex flex-1 justify-center items-center gap-2 cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-md transition-colors font-medium text-sm">
-                <Upload size={18} /> {isLoading ? 'Lendo...' : 'Carregar CSV'}
-                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                <Upload size={18} /> {isLoading ? 'Lendo...' : 'Carregar CSV (+)'}
+                <input type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
               </label>
               {isDemoData && activeTab === 'atendimentos' && <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded whitespace-nowrap"><AlertCircle size={14} /> Demo</span>}
             </div>
@@ -875,10 +939,20 @@ export default function Dashboard() {
              <div className="flex flex-col md:flex-row gap-4 flex-wrap">
                  {isComparisonMode ? (
                     <div className="flex gap-2 items-center bg-indigo-50 p-2 rounded border border-indigo-100">
-                        <span className="text-xs font-bold text-indigo-700 uppercase">Comparar:</span>
-                        <select value={compYear1} onChange={handleCompYear1Change} className="bg-white border border-indigo-200 rounded px-2 py-1 text-sm">{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select>
-                        <span className="text-indigo-400 font-bold">vs</span>
-                        <select value={compYear2} onChange={handleCompYear2Change} className="bg-white border border-indigo-200 rounded px-2 py-1 text-sm">{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select>
+                        <span className="text-xs font-bold text-indigo-700 uppercase">Anos:</span>
+                        <div className="w-64">
+                            <MultiSelect 
+                                label="" 
+                                options={filterOptions.years} 
+                                selectedValues={compYears} 
+                                onChange={(vals) => {
+                                    // Limita a 4 anos
+                                    if(vals.length <= 4) setCompYears(vals);
+                                    else alert("Máximo de 4 anos para comparação.");
+                                }}
+                                placeholder="Selecione anos..."
+                            />
+                        </div>
                     </div>
                  ) : (
                     <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select><ChevronDown size={16} className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" /></div></div>
@@ -917,26 +991,79 @@ export default function Dashboard() {
              </div>
            </div>
 
-           {/* --- VIEW: COMPARAÇÃO --- */}
+           {/* --- VIEW: COMPARAÇÃO (ATUALIZADO PARA MULTI-ANO) --- */}
            {isComparisonMode && comparisonData ? (
                <div className="animate-in fade-in duration-500">
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                       <Card className="p-6 flex flex-col justify-center items-center text-center"><p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear1}</p><h3 className="text-3xl font-bold text-slate-700">{comparisonData.total1.toLocaleString()}</h3></Card>
-                       <Card className="p-6 flex flex-col justify-center items-center text-center"><p className="text-sm font-bold text-slate-400 uppercase">Volume {compYear2}</p><h3 className="text-3xl font-bold text-slate-700">{comparisonData.total2.toLocaleString()}</h3></Card>
-                       <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
-                           <p className="text-sm font-bold text-slate-500 uppercase">Crescimento no Período</p>
-                           <h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>{comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%</h3>
-                           <p className="text-xs text-slate-500 mt-1">Comparação entre os anos selecionados</p>
-                       </Card>
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                       {/* Cards Dinâmicos por Ano */}
+                       {comparisonData.sortedYears.map(year => (
+                           <Card key={year} className="p-6 flex flex-col justify-center items-center text-center">
+                               <p className="text-sm font-bold text-slate-400 uppercase">Volume {year}</p>
+                               <h3 className="text-3xl font-bold text-slate-700">{comparisonData.totals[year].toLocaleString()}</h3>
+                           </Card>
+                       ))}
+                       
+                       {/* Card de Crescimento (Se >= 2 anos) */}
+                       {comparisonData.sortedYears.length >= 2 && (
+                           <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
+                               <p className="text-sm font-bold text-slate-500 uppercase">Crescimento Total</p>
+                               <h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                   {comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%
+                               </h3>
+                               <p className="text-xs text-slate-500 mt-1">
+                                   {comparisonData.sortedYears[0]} ➔ {comparisonData.sortedYears[comparisonData.sortedYears.length-1]}
+                               </p>
+                           </Card>
+                       )}
                    </div>
+
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                        <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-indigo-500" /> Comparativo Mensal</h3><ExportWidget targetId="comp-mensal" fileName={`comparativo_mensal_${compYear1}_${compYear2}`} /></div>
-                           <div id="comp-mensal" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><LineChart data={comparisonData.monthlyComp} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} /><RechartsTooltip contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} /><Legend /><Line type="monotone" dataKey={compYear1} stroke="#94a3b8" strokeWidth={3} dot={{r:4}} /><Line type="monotone" dataKey={compYear2} stroke="#4f46e5" strokeWidth={3} dot={{r:4}} /></LineChart></ResponsiveContainer></div>
+                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-indigo-500" /> Comparativo Mensal</h3><ExportWidget targetId="comp-mensal" fileName={`comparativo_mensal_multi`} /></div>
+                           <div id="comp-mensal" className="h-80 w-full bg-white p-2">
+                               <ResponsiveContainer width="100%" height="100%">
+                                   <LineChart data={comparisonData.monthlyComp} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                       <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
+                                       <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
+                                       <RechartsTooltip contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                                       <Legend />
+                                       {comparisonData.sortedYears.map((year, index) => (
+                                           <Line 
+                                               key={year}
+                                               type="monotone" 
+                                               dataKey={year} 
+                                               stroke={YEAR_COLORS[index % YEAR_COLORS.length]} 
+                                               strokeWidth={3} 
+                                               dot={{r:4}} 
+                                           />
+                                       ))}
+                                   </LineChart>
+                               </ResponsiveContainer>
+                           </div>
                        </Card>
                        <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-indigo-500" /> Variação por Especialidade (Top 10)</h3><ExportWidget targetId="comp-diff" fileName={`variacao_especialidade_${compYear1}_${compYear2}`} /></div>
-                           <div id="comp-diff" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={comparisonData.specDiff.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} /><Legend /><Bar dataKey="diff" name="Variação Absoluta" fill="#8b5cf6" radius={[0, 4, 4, 0]}>{comparisonData.specDiff.slice(0, 10).map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.diff >= 0 ? '#22c55e' : '#ef4444'} />))}</Bar></BarChart></ResponsiveContainer></div>
+                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-indigo-500" /> Comparativo por Especialidade (Top 10)</h3><ExportWidget targetId="comp-diff" fileName={`comparativo_especialidade_multi`} /></div>
+                           <div id="comp-diff" className="h-80 w-full bg-white p-2">
+                               <ResponsiveContainer width="100%" height="100%">
+                                   <BarChart layout="vertical" data={comparisonData.specComp} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
+                                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                       <XAxis type="number" hide />
+                                       <YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} />
+                                       <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                                       <Legend />
+                                       {comparisonData.sortedYears.map((year, index) => (
+                                           <Bar 
+                                               key={year} 
+                                               dataKey={year} 
+                                               fill={YEAR_COLORS[index % YEAR_COLORS.length]} 
+                                               radius={[0, 4, 4, 0]} 
+                                               barSize={comparisonData.sortedYears.length > 2 ? 10 : 20}
+                                           />
+                                       ))}
+                                   </BarChart>
+                               </ResponsiveContainer>
+                           </div>
                        </Card>
                    </div>
                </div>
