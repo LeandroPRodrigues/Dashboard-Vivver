@@ -9,18 +9,18 @@ import {
 } from 'lucide-react';
 
 // --- IMPORTAÇÕES MODULARIZADAS ---
-import { Card } from './components/Card';
-import { Button } from './components/Button';
-import { MultiSelect } from './components/MultiSelect';
-import { ExportWidget } from './components/ExportWidget';
+import { Card } from './components/Card.jsx';
+import { Button } from './components/Button.jsx';
+import { MultiSelect } from './components/MultiSelect.jsx';
+import { ExportWidget } from './components/ExportWidget.jsx';
 
 import { 
   COLORS, YEAR_COLORS, MONTH_NAMES, WEEK_DAYS, PERIOD_PRESETS, 
   HOSPITAL_PROCEDURE_MAP, OBS_CODES 
-} from './utils/constants';
+} from './utils/constants.js';
 
-import { getShift, fixEncoding } from './utils/helpers';
-import { processFiles } from './utils/dataProcessor';
+import { getShift, fixEncoding } from './utils/helpers.js';
+import { processFiles } from './utils/dataProcessor.js';
 
 // --- MOCK DATA ---
 const generateMockData = () => {
