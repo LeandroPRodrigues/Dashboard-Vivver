@@ -1,181 +1,26 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
   LineChart, Line, Cell, PieChart, Pie, AreaChart, Area
 } from 'recharts';
 import { 
-  Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, ChevronDown, X, Check, Table, 
-  FileDown, Image as ImageIcon, FileSpreadsheet, ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, AlertTriangle, Search, Sun, Moon, Trash2
+  Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, X, Table, 
+  ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, Sun, Moon, Trash2, ClipboardPlus
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
 
-// --- CONFIGURAÇÃO DE CORES E CONSTANTES ---
-const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6', '#f43f5e'];
-// Cores específicas para anos na comparação (para manter consistência visual)
-const YEAR_COLORS = ['#94a3b8', '#60a5fa', '#3b82f6', '#1d4ed8', '#1e3a8a']; 
+// --- IMPORTAÇÕES MODULARIZADAS ---
+import { Card } from './components/Card';
+import { Button } from './components/Button';
+import { MultiSelect } from './components/MultiSelect';
+import { ExportWidget } from './components/ExportWidget';
 
-const MONTH_NAMES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const WEEK_DAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+import { 
+  COLORS, YEAR_COLORS, MONTH_NAMES, WEEK_DAYS, PERIOD_PRESETS, 
+  HOSPITAL_PROCEDURE_MAP, OBS_CODES 
+} from './utils/constants';
 
-const PERIOD_PRESETS = {
-  '1º Tri': ['1','2','3'],
-  '2º Tri': ['4','5','6'],
-  '3º Tri': ['7','8','9'],
-  '4º Tri': ['10','11','12'],
-  '1º Sem': ['1','2','3','4','5','6'],
-  '2º Sem': ['7','8','9','10','11','12']
-};
-
-const HOSPITAL_PROCEDURE_MAP = {
-  '301060096': 'Primeiro atendimento', '0301060096': 'Primeiro atendimento', '9999999984': 'Primeiro atendimento', 
-  '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
-};
-
-const OBS_CODES = ['301060029', '0301060029', '9990000096']; 
-
-const COLUMN_ALIASES = {
-  unitCode: ['codigo_unidade', 'Codigo unidade', 'Cód. Unidade', 'cod_unidade'],
-  unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade'],
-  date: ['data_atendimento', 'Data atendimento', 'Data', 'dt_atend'],
-  time: ['hora_atendimento', 'Hora atendimento', 'Hora', 'hr_atend'], 
-  spec: ['nome_especialidade', 'Nome especialidade', 'Especialidade', 'CBO', 'cbo_descricao'],
-  prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico'],
-  procCode: ['codigo_procedimento', 'Codigo procedimento', 'Cód. Procedimento'],
-  procName: ['nome_procedimento', 'Nome procedimento', 'Procedimento'],
-  city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente', 'nome_municipio_paciente'], 
-  age: ['idade', 'Idade', 'Idade atendimento paciente', 'idade_atendimento_paciente'],
-  gender: ['sexo', 'Sexo', 'Genero']
-};
-
-const DEMAND_ALIASES = {
-  reqDate: ['data_solicitacao', 'Data solicitacao'],
-  service: ['nome', 'Nome', 'tipo_servico'],
-  procedure: ['nome_procedimento', 'Procedimento'],
-  procCode: ['codigo_procedimento', 'cod_procedimento'],
-  unitRef: ['nom_und_ref', 'Unidade Referencia', 'codunidaderef'],
-  priority: ['nome_prioridade', 'Prioridade'],
-  patientId: ['numprontuario', 'Prontuario'],
-  cboName: ['nome_cbo_executante', 'CBO Executante', 'cbo_executante'],
-  age: ['idade', 'dt_nascimento', 'data_nascimento']
-};
-
-// --- HELPERS DE TEXTO ---
-const fixEncoding = (str) => {
-  if (str === null || str === undefined) return "";
-  let newStr = String(str);
-  
-  const visualSpecifics = [
-      { find: /Á%‰/g, replace: "É" },
-      { find: /Á“/g, replace: "Ó" },
-      { find: /clÁnico/gi, replace: "clínico" },
-      { find: /REGULAÁ‡ÁO/g, replace: "REGULAÇÃO" },
-      { find: /REGULAÃ‡ÃƒO/g, replace: "REGULAÇÃO" },
-      { find: /ATENÁ‡ÁO/g, replace: "ATENÇÃO" },
-      { find: /AVALIAÁ‡ÁO/g, replace: "AVALIAÇÃO" },
-      { find: /COERÁŠNCIA/g, replace: "COERÊNCIA" }
-  ];
-
-  visualSpecifics.forEach(({ find, replace }) => {
-     newStr = newStr.replace(find, replace);
-  });
-
-  const standardReplacements = {
-    'Ã©': 'é', 'Ã¡': 'á', 'Ã£': 'ã', 'Ã³': 'ó', 'Ã´': 'ô', 'Ãª': 'ê',
-    'Ã§': 'ç', 'Ãº': 'ú', 'Ã­': 'í', 'Ã\xad': 'í', 'Ã ': 'à', 'Ã¢': 'â',
-    'Ã¶': 'ö', 'Ã‰': 'É', 'Ãƒ': 'Ã', 'Ã…': 'Å', 'Ã“': 'Ó', 'Ã”': 'Ô',
-    'Ã•': 'Õ', 'Ã‚': 'Â', 'Ã€': 'À', 'Ã': 'Á', 'Ã‡': 'Ç', 'Ãš': 'Ú',
-    'ÃÍ': 'Í', 'Ã‘': 'Ñ', 'Âº': 'º', 'Â°': '°',
-    'Á‡': 'Ç', 'ÁŠ': 'Ê', 'Á+': 'Ã'
-  };
-
-  for (const [key, value] of Object.entries(standardReplacements)) {
-     if (newStr.includes(key)) {
-         newStr = newStr.split(key).join(value);
-     }
-  }
-  return newStr.trim();
-};
-
-const normalizeHeader = (header, aliasMap = COLUMN_ALIASES) => {
-  if (!header) return "";
-  const cleanHeader = header.trim();
-  for (const [key, aliases] of Object.entries(aliasMap)) {
-    if (aliases.some(alias => cleanHeader.toLowerCase() === alias.toLowerCase())) return key;
-  }
-  return cleanHeader; 
-};
-
-const getShift = (timeStr) => {
-    if (!timeStr) return 'Indefinido';
-    const hour = parseInt(timeStr.split(':')[0], 10);
-    if (isNaN(hour)) return 'Indefinido';
-    if (hour >= 7 && hour <= 18) return 'Diurno';
-    return 'Noturno';
-};
-
-// --- COMPONENTES UI ---
-const Card = ({ children, className = "" }) => (
-  <div className={`bg-white rounded-lg shadow-sm border border-slate-200 break-inside-avoid mb-6 ${className} print:shadow-none print:border-slate-300 print:mb-8`}>
-    {children}
-  </div>
-);
-
-const Button = ({ children, onClick, active, className = "" }) => (
-  <button onClick={onClick} className={`px-3 py-1.5 rounded-md font-medium transition-colors text-xs md:text-sm print:hidden border shadow-sm ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200 hover:border-blue-300'} ${className}`}>
-    {children}
-  </button>
-);
-
-const MultiSelect = ({ label, options = [], selectedValues = [], onChange, placeholder = "Selecione..." }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => { if (containerRef.current && !containerRef.current.contains(event.target)) setIsOpen(false); };
-    document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const toggleOption = (value) => { const newSelected = selectedValues.includes(value) ? selectedValues.filter(v => v !== value) : [...selectedValues, value]; onChange(newSelected); };
-  const handleSelectAll = () => { if (selectedValues.length === options.length) onChange([]); else onChange(options.map(o => o.value)); };
-  const filteredOptions = options.filter(opt => opt.label.toLowerCase().includes(searchTerm.toLowerCase()));
-
-  return (
-    <div className="relative w-full md:w-64 print:hidden" ref={containerRef}>
-      <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">{label}</label>
-      <button onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm transition-all">
-        <span className="truncate">{selectedValues.length === 0 ? placeholder : selectedValues.length === options.length ? "Todos selecionados" : `${selectedValues.length} selecionado(s)`}</span>
-        <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-      {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-          <div className="p-2 border-b border-slate-100 sticky top-0 bg-white z-20">
-             <div className="relative">
-                <Search size={14} className="absolute left-2 top-2.5 text-slate-400" />
-                <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:border-blue-400" placeholder="Buscar..." />
-             </div>
-          </div>
-          {filteredOptions.length > 0 && (
-             <div onClick={handleSelectAll} className="px-3 py-2 border-b border-slate-100 hover:bg-slate-50 cursor-pointer flex items-center gap-2 text-xs font-bold text-blue-600 bg-slate-50">
-              {selectedValues.length === options.length ? "Desmarcar Todos" : "Marcar Todos (Visíveis)"}
-            </div>
-          )}
-          {filteredOptions.length === 0 ? <div className="p-3 text-sm text-slate-400 text-center">Nenhuma opção encontrada</div> : 
-            filteredOptions.map((opt) => (
-              <div key={opt.value} onClick={() => toggleOption(opt.value)} className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-2 text-sm text-slate-700 border-b border-slate-50 last:border-0">
-                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedValues.includes(opt.value) ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>
-                  {selectedValues.includes(opt.value) && <Check size={12} className="text-white" />}
-                </div>
-                <span className="truncate">{opt.label}</span>
-              </div>
-            ))
-          }
-        </div>
-      )}
-    </div>
-  );
-};
+import { getShift, fixEncoding } from './utils/helpers';
+import { processFiles } from './utils/dataProcessor';
 
 // --- MOCK DATA ---
 const generateMockData = () => {
@@ -200,53 +45,12 @@ const generateMockData = () => {
           procName: "PROCEDIMENTO HOSPITALAR",
           city: "OURO BRANCO - MG",
           age: age,
+          hasEvolucao: Math.random() > 0.7, // 30% de chance de ter evolução no mock
           ageGroup: age < 12 ? 'Criança (0-12)' : age < 18 ? 'Adolescente (13-18)' : age < 60 ? 'Adulto (19-59)' : 'Idoso (60+)'
         });
     }
   });
   return mock;
-};
-
-// --- EXPORT FUNCTIONS ---
-const exportAsImage = async (elementId, fileName) => {
-  const element = document.getElementById(elementId);
-  if (!element) return;
-  try {
-    const canvas = await html2canvas(element, { backgroundColor: '#ffffff' });
-    const link = document.createElement("a"); link.href = canvas.toDataURL("image/png"); link.download = `${fileName}.png`; link.click();
-  } catch (error) { console.error("Erro imagem:", error); }
-};
-
-const exportAsExcel = (data, fileName) => {
-  try {
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Dados");
-    XLSX.writeFile(workbook, `${fileName}.xlsx`);
-  } catch (error) { console.error("Erro excel:", error); }
-};
-
-const ExportWidget = ({ targetId, fileName, dataForExcel = null }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef(null);
-  useEffect(() => {
-    const handleClickOutside = (event) => { if (menuRef.current && !menuRef.current.contains(event.target)) setIsOpen(false); };
-    document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-  const handleImage = () => { exportAsImage(targetId, fileName); setIsOpen(false); };
-  const handleExcel = () => { if (dataForExcel) exportAsExcel(dataForExcel, fileName); setIsOpen(false); };
-  if (!dataForExcel) return <button onClick={handleImage} title="Baixar Imagem" className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-100 print:hidden"><FileDown size={18} /></button>;
-  return (
-    <div className="relative inline-block print:hidden" ref={menuRef}>
-      <button onClick={() => setIsOpen(!isOpen)} className={`text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-slate-100 ${isOpen ? 'text-blue-600 bg-slate-50' : ''}`}><FileDown size={18} /></button>
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-slate-100 z-50 py-1 animate-in fade-in zoom-in-95 duration-200">
-          <button onClick={handleImage} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"><ImageIcon size={14} className="text-purple-500"/> Baixar Imagem</button>
-          <button onClick={handleExcel} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"><FileSpreadsheet size={14} className="text-green-500"/> Baixar Excel</button>
-        </div>
-      )}
-    </div>
-  );
 };
 
 export default function Dashboard() {
@@ -304,12 +108,10 @@ export default function Dashboard() {
   useEffect(() => { 
       if (availableYears.length >= 1) { 
           setSelectedYear(availableYears[0]);
-          // Inicializa comparação com os 2 (ou até 4) primeiros anos disponíveis
           setCompYears(availableYears.slice(0, Math.min(4, availableYears.length))); 
       } 
   }, [availableYears]);
 
-  // --- FUNÇÃO PARA LIMPAR DADOS ---
   const handleClearData = () => {
       if(window.confirm("Tem certeza que deseja limpar todos os dados carregados?")) {
           setRawData([]);
@@ -320,125 +122,35 @@ export default function Dashboard() {
       }
   };
 
-  // --- UPLOAD CSV ---
+  // --- UPLOAD USANDO O NOVO PROCESSADOR DE DADOS ---
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files);
     if (!files.length) return;
     setIsLoading(true);
 
-    const newAtendimentos = [];
-    const newDemanda = [];
-    let reportTitleUpdated = reportTitle;
+    try {
+        const { newAtendimentos, newDemanda, fileReportTitle } = await processFiles(files);
 
-    const readFile = (file) => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsText(file, "ISO-8859-1");
-            reader.onload = (e) => {
-                const text = e.target.result;
-                if (!text) { resolve(); return; }
-                const rows = text.split(/\r?\n/);
-                if (rows.length < 2) { resolve(); return; }
-
-                const firstLine = rows[0];
-                const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
-                const rawHeaders = rows[0].split(delimiter).map(h => h.trim().replace(/"/g, ''));
-
-                const isDemanda = rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'reqDate') || 
-                                  rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'unitRef');
-
-                if (isDemanda) {
-                    const headerMap = rawHeaders.map(h => normalizeHeader(h, DEMAND_ALIASES));
-                    const now = new Date();
-                    for (let i = 1; i < rows.length; i++) {
-                        if (!rows[i].trim()) continue;
-                        const values = rows[i].split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`));
-                        if (values.length >= rawHeaders.length - 1) {
-                            const rowObj = {};
-                            headerMap.forEach((key, index) => {
-                                if (values[index]) rowObj[key] = fixEncoding(values[index].replace(/"/g, '').trim());
-                            });
-                            if (rowObj.reqDate) {
-                                const parts = rowObj.reqDate.split('/');
-                                if (parts.length === 3) {
-                                    let year = parseInt(parts[2]);
-                                    if (year === 1900) year = 2025;
-                                    const month = parseInt(parts[1]);
-                                    const day = parseInt(parts[0]);
-                                    const dt = new Date(year, month - 1, day);
-                                    rowObj.dateObj = dt;
-                                    rowObj.ano = String(year);
-                                    rowObj.mes = month;
-                                    const diffTime = Math.abs(now - dt);
-                                    rowObj.waitDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-                                }
-                            }
-                            newDemanda.push(rowObj);
-                        }
-                    }
-                    if (reportTitle === 'Painel de Gestão Hospitalar') {
-                        reportTitleUpdated = `Painel de Demanda Reprimida - ${file.name.replace('.csv', '').replace(/_/g, ' ')}`;
-                    }
-                } else {
-                    const headerMap = rawHeaders.map(h => normalizeHeader(h, COLUMN_ALIASES)); 
-                    for (let i = 1; i < rows.length; i++) {
-                        if (!rows[i].trim()) continue;
-                        const values = rows[i].split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`));
-                        if (values.length >= rawHeaders.length - 1) {
-                            const rowObj = {};
-                            headerMap.forEach((key, index) => {
-                                if (values[index]) {
-                                    let val = values[index].replace(/"/g, '').trim();
-                                    if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) val = fixEncoding(val);
-                                    if (key === 'time' && val.includes(' ')) {
-                                        const parts = val.split(' ');
-                                        if (parts[1] && parts[1].includes(':')) val = parts[1];
-                                        else if (parts[0] && parts[0].includes(':')) val = parts[0];
-                                    }
-                                    rowObj[key] = val; 
-                                }
-                            });
-                            let ano = 'N/A';
-                            let mes = 0;
-                            let dt = null;
-                            if (rowObj.date) {
-                                const parts = rowObj.date.split('/');
-                                if (parts.length === 3) { 
-                                    ano = parts[2]; mes = parseInt(parts[1]); dt = new Date(parts[2], parts[1]-1, parts[0]);
-                                }
-                            }
-                            rowObj.ano_final = ano; rowObj.mes_final = mes; rowObj.dateObj = dt;
-                            if (rowObj.age) {
-                                const age = parseInt(rowObj.age);
-                                rowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
-                            }
-                            newAtendimentos.push(rowObj);
-                        }
-                    }
-                }
-                resolve();
-            };
-        });
-    };
-
-    await Promise.all(files.map(readFile));
-
-    if (newAtendimentos.length > 0) {
-        setRawData(prev => {
-            const base = isDemoData ? [] : prev;
-            return [...base, ...newAtendimentos];
-        });
-        setIsDemoData(false);
-        if(!reportTitleUpdated.includes('Demanda')) setReportTitle('Painel de Gestão Hospitalar (Consolidado)');
-        setActiveTab('atendimentos');
-    }
-    
-    if (newDemanda.length > 0) {
-        setDemandData(prev => [...prev, ...newDemanda]);
-        if(newAtendimentos.length === 0) {
-             setActiveTab('demanda');
-             setReportTitle(reportTitleUpdated);
+        if (newAtendimentos.length > 0) {
+            setRawData(prev => {
+                const base = isDemoData ? [] : prev;
+                return [...base, ...newAtendimentos];
+            });
+            setIsDemoData(false);
+            if(!reportTitle.includes('Demanda')) setReportTitle('Painel de Gestão Hospitalar (Consolidado)');
+            setActiveTab('atendimentos');
         }
+        
+        if (newDemanda.length > 0) {
+            setDemandData(prev => [...prev, ...newDemanda]);
+            if(newAtendimentos.length === 0) {
+                 setActiveTab('demanda');
+                 setReportTitle(`Painel de Demanda Reprimida - ${fileReportTitle || 'Importado'}`);
+            }
+        }
+    } catch (error) {
+        console.error("Erro no processamento do arquivo:", error);
+        alert("Erro ao ler o arquivo. Certifique-se de que é um Excel ou CSV válido.");
     }
 
     setIsLoading(false);
@@ -512,6 +224,8 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const total = filteredData.length;
+    let totalEvolucoes = 0; // Contabilizador de evoluções
+    
     const byMonthObj = {}; const bySpecObj = {}; const byProfObj = {}; const byCityObj = {}; const byAgeObj = {};
     const byWeekDayObj = {}; const byHourObj = {};
     const matrixMap = new Map(); 
@@ -521,6 +235,8 @@ export default function Dashboard() {
     for (let h = 0; h < 24; h++) byHourObj[h] = 0;
 
     filteredData.forEach(item => {
+      if (item.hasEvolucao) totalEvolucoes++; // Contando as evoluções
+
       if (item.mes_final >= 1 && item.mes_final <= 12) byMonthObj[item.mes_final] += 1;
       if (item.dateObj && !isNaN(item.dateObj)) {
           const dayName = WEEK_DAYS[item.dateObj.getDay()];
@@ -534,7 +250,6 @@ export default function Dashboard() {
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
       
-      // --- Lógica da Matriz ---
       if (activeUnit === '104') {
         const specName = item.spec || "Não informado";
         if (!matrixMap.has(specName)) {
@@ -547,13 +262,10 @@ export default function Dashboard() {
         if (m >= 1 && m <= 12) {
             specData.months[m].total += 1;
             specData.totalGeral += 1;
-            if (OBS_CODES.includes(String(item.procCode))) {
-                specData.months[m].obs += 1;
-            }
+            if (OBS_CODES.includes(String(item.procCode))) specData.months[m].obs += 1;
         }
       }
 
-      // --- Lógica de Profissionais ---
       const prof = item.prof || "Não informado";
       if (!byProfObj[prof]) {
           byProfObj[prof] = { name: prof, total: 0, days: new Set(), diurno_atend: 0, diurno_obs: 0, noturno_atend: 0, noturno_obs: 0 };
@@ -578,23 +290,19 @@ export default function Dashboard() {
 
     const hospitalMatrixData = Array.from(matrixMap.values()).map(item => {
         const row = { spec: item.spec, totalGeral: item.totalGeral };
-        Object.entries(item.months).forEach(([monthIdx, data]) => {
-            row[monthIdx] = data;
-        });
+        Object.entries(item.months).forEach(([monthIdx, data]) => row[monthIdx] = data);
         return row;
     }).sort((a, b) => b.totalGeral - a.totalGeral);
 
     const profKeys = new Set();
     allProfs.slice(0, 20).forEach(p => { Object.keys(p).forEach(k => { if (!['name', 'total', 'days', 'daysCount', 'avgPerDay', 'diurno_atend', 'diurno_obs', 'noturno_atend', 'noturno_obs'].includes(k)) profKeys.add(k); }); });
 
-    return { total, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
+    return { total, totalEvolucoes, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
   // --- LOGICA DE COMPARAÇÃO MULTI-ANO ---
   const comparisonData = useMemo(() => {
     if (!isComparisonMode || compYears.length === 0) return null;
-    
-    // Filtro Base
     const baseData = rawData
         .filter(item => String(item.unitCode || "").trim() === activeUnit)
         .map(item => {
@@ -604,52 +312,36 @@ export default function Dashboard() {
             return newItem;
         }).filter(item => item.isValid);
 
-    const sortedYears = [...compYears].sort(); // Ordena os anos selecionados (ex: 2024, 2025, 2026)
-    
-    // 1. Totais por Ano
+    const sortedYears = [...compYears].sort();
     const totals = {};
-    sortedYears.forEach(year => {
-        totals[year] = baseData.filter(d => d.ano_final === year && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length;
-    });
+    sortedYears.forEach(year => totals[year] = baseData.filter(d => d.ano_final === year && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length);
 
-    // 2. Cálculo do Crescimento (Último ano selecionado vs Primeiro ano selecionado)
     let growth = 0;
     if(sortedYears.length >= 2) {
-        const firstYear = sortedYears[0];
-        const lastYear = sortedYears[sortedYears.length - 1];
-        const v1 = totals[firstYear];
-        const v2 = totals[lastYear];
+        const firstYear = sortedYears[0]; const lastYear = sortedYears[sortedYears.length - 1];
+        const v1 = totals[firstYear]; const v2 = totals[lastYear];
         growth = v1 > 0 ? ((v2 - v1) / v1) * 100 : 0;
     }
 
-    // 3. Comparativo Mensal (Linha)
     const monthlyComp = [];
     for(let i=1; i<=12; i++) {
         if (selectedMonths.length > 0 && !selectedMonths.includes(String(i))) continue;
         const row = { name: MONTH_NAMES[i-1] };
-        sortedYears.forEach(year => {
-            row[year] = baseData.filter(d => d.ano_final === year && d.mes_final === i).length;
-        });
+        sortedYears.forEach(year => row[year] = baseData.filter(d => d.ano_final === year && d.mes_final === i).length);
         monthlyComp.push(row);
     }
 
-    // 4. Comparativo por Especialidade (Top 10 Geral)
-    // Primeiro, descobre as Top 10 specs somando todos os anos selecionados
     const specTotals = {};
     baseData.forEach(d => {
         if(sortedYears.includes(d.ano_final) && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))) {
-            const s = d.spec || "N/I";
-            specTotals[s] = (specTotals[s] || 0) + 1;
+            const s = d.spec || "N/I"; specTotals[s] = (specTotals[s] || 0) + 1;
         }
     });
     const topSpecs = Object.keys(specTotals).sort((a,b) => specTotals[b] - specTotals[a]).slice(0, 10);
 
-    // Monta o array para o gráfico
     const specComp = topSpecs.map(spec => {
         const row = { name: spec };
-        sortedYears.forEach(year => {
-            row[year] = baseData.filter(d => d.ano_final === year && d.spec === spec && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length;
-        });
+        sortedYears.forEach(year => row[year] = baseData.filter(d => d.ano_final === year && d.spec === spec && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length);
         return row;
     });
 
@@ -657,19 +349,11 @@ export default function Dashboard() {
   }, [isComparisonMode, compYears, activeUnit, rawData, selectedMonths]);
 
   // --- LOGICA DEMANDA REPRIMIDA ---
-  const isSpecializedSelected = useMemo(() => {
-      return demandFilters.services.some(s => s && s.toLowerCase().includes("especializada"));
-  }, [demandFilters.services]);
+  const isSpecializedSelected = useMemo(() => demandFilters.services.some(s => s && s.toLowerCase().includes("especializada")), [demandFilters.services]);
 
   const demandOptions = useMemo(() => {
-     const services = new Set();
-     const procedures = new Set();
-     const years = new Set();
-     demandData.forEach(d => {
-         if (d.service) services.add(d.service);
-         if (d.procedure) procedures.add(d.procedure);
-         if (d.ano) years.add(d.ano);
-     });
+     const services = new Set(); const procedures = new Set(); const years = new Set();
+     demandData.forEach(d => { if (d.service) services.add(d.service); if (d.procedure) procedures.add(d.procedure); if (d.ano) years.add(d.ano); });
      return {
          services: Array.from(services).sort().map(s => ({label: s, value: s})),
          procedures: Array.from(procedures).sort().map(p => ({label: p, value: p})),
@@ -691,29 +375,17 @@ export default function Dashboard() {
   const demandStats = useMemo(() => {
       const total = filteredDemand.length;
       let totalWait = 0; let countWait = 0;
-      const byService = {}; const byCbo = {}; const byUnit = {}; 
-      const byProcedure = {}; 
+      const byService = {}; const byCbo = {}; const byUnit = {}; const byProcedure = {}; 
 
       filteredDemand.forEach(item => {
           if (item.waitDays) { totalWait += item.waitDays; countWait++; }
-          
-          const s = item.service || 'Outros';
-          const cbo = item.cboName || 'Não Informado';
-          
-          byService[s] = (byService[s] || 0) + 1;
-          byCbo[cbo] = (byCbo[cbo] || 0) + 1;
-          
-          const pCode = item.procCode || 'N/A';
-          const pName = item.procedure || 'Outros';
+          const s = item.service || 'Outros'; const cbo = item.cboName || 'Não Informado';
+          byService[s] = (byService[s] || 0) + 1; byCbo[cbo] = (byCbo[cbo] || 0) + 1;
+          const pCode = item.procCode || 'N/A'; const pName = item.procedure || 'Outros';
           const pKey = isSpecializedSelected ? `${pCode}|${pName}|${cbo}` : `${pCode}|${pName}`;
-          
-          if (!byProcedure[pKey]) {
-              byProcedure[pKey] = { code: pCode, name: pName, cbo: cbo, count: 0 };
-          }
+          if (!byProcedure[pKey]) byProcedure[pKey] = { code: pCode, name: pName, cbo: cbo, count: 0 };
           byProcedure[pKey].count++;
-
-          const u = item.unitRef || 'Não Informado';
-          byUnit[u] = (byUnit[u] || 0) + 1;
+          const u = item.unitRef || 'Não Informado'; byUnit[u] = (byUnit[u] || 0) + 1;
       });
 
       const avgWait = countWait > 0 ? Math.round(totalWait / countWait) : 0;
@@ -728,7 +400,8 @@ export default function Dashboard() {
 
   const handleSpecChartClick = (data) => {
     if (data && data.name) {
-      if (selectedSpecs.length === 1 && selectedSpecs.includes(data.name)) { setSelectedSpecs([]); } else { setSelectedSpecs([data.name]); }
+      if (selectedSpecs.length === 1 && selectedSpecs.includes(data.name)) setSelectedSpecs([]); 
+      else setSelectedSpecs([data.name]); 
     }
   };
 
@@ -766,8 +439,8 @@ export default function Dashboard() {
 
             <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
               <label className="flex flex-1 justify-center items-center gap-2 cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2 rounded-md transition-colors font-medium text-sm">
-                <Upload size={18} /> {isLoading ? 'Lendo...' : 'Carregar CSV (+)'}
-                <input type="file" accept=".csv" multiple onChange={handleFileUpload} className="hidden" />
+                <Upload size={18} /> {isLoading ? 'Lendo...' : 'Carregar XLS/CSV'}
+                <input type="file" accept=".csv, .xls, .xlsx" multiple onChange={handleFileUpload} className="hidden" />
               </label>
               {isDemoData && activeTab === 'atendimentos' && <span className="flex items-center gap-1 text-xs text-amber-600 font-medium bg-amber-50 px-2 py-1 rounded whitespace-nowrap"><AlertCircle size={14} /> Demo</span>}
             </div>
@@ -907,24 +580,12 @@ export default function Dashboard() {
                             </div></div>
                         </Card>
                     </div>
-                    
-                    <div className="mb-6">
-                        <Card className="p-6 bg-blue-50 border-blue-100">
-                             <h3 className="text-sm font-bold text-blue-800 mb-2">Resumo da Análise</h3>
-                             <ul className="text-sm text-blue-700 space-y-2">
-                                 <li>• Total de <strong>{demandStats.total}</strong> solicitações pendentes.</li>
-                                 <li>• Tempo médio geral de espera: <strong>{demandStats.avgWait} dias</strong>.</li>
-                                 <li>• Serviço mais requisitado: <strong>{demandStats.mainChart?.[0]?.name || '-'}</strong>.</li>
-                                 <li>• Unidade com maior fila: <strong>{demandStats.unitChart?.[0]?.name || '-'}</strong>.</li>
-                             </ul>
-                        </Card>
-                    </div>
                     </>
                 )}
             </div>
         )}
 
-        {/* --- VIEW: ATENDIMENTOS (ANTIGO) --- */}
+        {/* --- VIEW: ATENDIMENTOS --- */}
         {activeTab === 'atendimentos' && (
            <div className="animate-in fade-in duration-500">
            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col gap-4 print:hidden" data-html2canvas-ignore="true">
@@ -942,20 +603,14 @@ export default function Dashboard() {
                         <span className="text-xs font-bold text-indigo-700 uppercase">Anos:</span>
                         <div className="w-64">
                             <MultiSelect 
-                                label="" 
-                                options={filterOptions.years} 
-                                selectedValues={compYears} 
-                                onChange={(vals) => {
-                                    // Limita a 4 anos
-                                    if(vals.length <= 4) setCompYears(vals);
-                                    else alert("Máximo de 4 anos para comparação.");
-                                }}
+                                label="" options={filterOptions.years} selectedValues={compYears} 
+                                onChange={(vals) => { if(vals.length <= 4) setCompYears(vals); else alert("Máximo de 4 anos para comparação."); }}
                                 placeholder="Selecione anos..."
                             />
                         </div>
                     </div>
                  ) : (
-                    <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select><ChevronDown size={16} className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" /></div></div>
+                    <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select></div></div>
                  )}
 
                  <div className="flex flex-col gap-1">
@@ -991,19 +646,16 @@ export default function Dashboard() {
              </div>
            </div>
 
-           {/* --- VIEW: COMPARAÇÃO (ATUALIZADO PARA MULTI-ANO) --- */}
+           {/* --- VIEW: COMPARAÇÃO MULTI-ANO --- */}
            {isComparisonMode && comparisonData ? (
                <div className="animate-in fade-in duration-500">
                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                       {/* Cards Dinâmicos por Ano */}
                        {comparisonData.sortedYears.map(year => (
                            <Card key={year} className="p-6 flex flex-col justify-center items-center text-center">
                                <p className="text-sm font-bold text-slate-400 uppercase">Volume {year}</p>
                                <h3 className="text-3xl font-bold text-slate-700">{comparisonData.totals[year].toLocaleString()}</h3>
                            </Card>
                        ))}
-                       
-                       {/* Card de Crescimento (Se >= 2 anos) */}
                        {comparisonData.sortedYears.length >= 2 && (
                            <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
                                <p className="text-sm font-bold text-slate-500 uppercase">Crescimento Total</p>
@@ -1028,22 +680,13 @@ export default function Dashboard() {
                                        <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
                                        <RechartsTooltip contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
                                        <Legend />
-                                       {comparisonData.sortedYears.map((year, index) => (
-                                           <Line 
-                                               key={year}
-                                               type="monotone" 
-                                               dataKey={year} 
-                                               stroke={YEAR_COLORS[index % YEAR_COLORS.length]} 
-                                               strokeWidth={3} 
-                                               dot={{r:4}} 
-                                           />
-                                       ))}
+                                       {comparisonData.sortedYears.map((year, index) => <Line key={year} type="monotone" dataKey={year} stroke={YEAR_COLORS[index % YEAR_COLORS.length]} strokeWidth={3} dot={{r:4}} />)}
                                    </LineChart>
                                </ResponsiveContainer>
                            </div>
                        </Card>
                        <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-indigo-500" /> Comparativo por Especialidade (Top 10)</h3><ExportWidget targetId="comp-diff" fileName={`comparativo_especialidade_multi`} /></div>
+                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-indigo-500" /> Comparativo por Especialidade</h3><ExportWidget targetId="comp-diff" fileName={`comparativo_especialidade_multi`} /></div>
                            <div id="comp-diff" className="h-80 w-full bg-white p-2">
                                <ResponsiveContainer width="100%" height="100%">
                                    <BarChart layout="vertical" data={comparisonData.specComp} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
@@ -1052,15 +695,7 @@ export default function Dashboard() {
                                        <YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} />
                                        <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
                                        <Legend />
-                                       {comparisonData.sortedYears.map((year, index) => (
-                                           <Bar 
-                                               key={year} 
-                                               dataKey={year} 
-                                               fill={YEAR_COLORS[index % YEAR_COLORS.length]} 
-                                               radius={[0, 4, 4, 0]} 
-                                               barSize={comparisonData.sortedYears.length > 2 ? 10 : 20}
-                                           />
-                                       ))}
+                                       {comparisonData.sortedYears.map((year, index) => <Bar key={year} dataKey={year} fill={YEAR_COLORS[index % YEAR_COLORS.length]} radius={[0, 4, 4, 0]} barSize={10} />)}
                                    </BarChart>
                                </ResponsiveContainer>
                            </div>
@@ -1073,13 +708,18 @@ export default function Dashboard() {
                        <span className="font-bold text-slate-700">Filtros Aplicados:</span>
                        <span>Ano: <strong>{selectedYear === 'all' ? 'Todos' : selectedYear}</strong></span>
                        <span>Período: <strong>{selectedMonths.length === 0 ? 'Todos' : selectedMonths.length === 12 ? 'Ano Completo' : `${selectedMonths.length} meses selecionados`}</strong></span>
-                       {selectedSpecs.length > 0 && <span>Especialidades: <strong>{selectedSpecs.length}</strong></span>}
                    </div>
 
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                        <Card className="p-6 border-l-4 border-l-blue-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Volume Total</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.total.toLocaleString()}</h3></div><div className="p-3 bg-blue-50 rounded-full text-blue-600"><FileText size={24} /></div></div>{activeUnit === '104' ? stats.total > 0 && <p className="text-xs text-slate-400 mt-2">Filtrado por: 1º Atendimento e Obs.</p> : <p className="text-xs text-slate-400 mt-2">Excluindo Eletrocardiograma</p>}</Card>
-                       <Card className="p-6 border-l-4 border-l-green-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Especialidade</p><h3 className="text-xl font-bold text-slate-800 mt-2 truncate w-48" title={stats.bySpec[0]?.name}>{stats.bySpec[0]?.name || '-'}</h3><p className="text-sm text-green-600 font-medium">{stats.bySpec[0]?.value ? `${stats.bySpec[0].value.toLocaleString()} atendimentos` : 'N/A'}</p></div><div className="p-3 bg-green-50 rounded-full text-green-600"><Stethoscope size={24} /></div></div></Card>
-                       <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pico Mensal</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {name: '-'}).name}</h3><p className="text-sm text-purple-600 font-medium">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {value: 0}).value.toLocaleString()} atendimentos</p></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><Calendar size={24} /></div></div></Card>
+                       
+                       {/* NOVO CARD: EVOLUÇÕES PARA UNIDADE 104 */}
+                       {activeUnit === '104' && (
+                           <Card className="p-6 border-l-4 border-l-emerald-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total de Evoluções</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalEvolucoes.toLocaleString()}</h3></div><div className="p-3 bg-emerald-50 rounded-full text-emerald-600"><ClipboardPlus size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Registradas no período</p></Card>
+                       )}
+
+                       <Card className="p-6 border-l-4 border-l-green-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Especialidade</p><h3 className="text-xl font-bold text-slate-800 mt-2 truncate w-32" title={stats.bySpec[0]?.name}>{stats.bySpec[0]?.name || '-'}</h3><p className="text-sm text-green-600 font-medium">{stats.bySpec[0]?.value ? `${stats.bySpec[0].value.toLocaleString()} atends.` : 'N/A'}</p></div><div className="p-3 bg-green-50 rounded-full text-green-600"><Stethoscope size={24} /></div></div></Card>
+                       <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pico Mensal</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {name: '-'}).name}</h3><p className="text-sm text-purple-600 font-medium">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {value: 0}).value.toLocaleString()} atends.</p></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><Calendar size={24} /></div></div></Card>
                    </div>
 
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -1088,12 +728,10 @@ export default function Dashboard() {
                            <div id="chart-evolucao" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><LineChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="value" name="Atendimentos" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4, fill: '#0ea5e9', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer></div>
                        </Card>
                        <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade (Clique para Filtrar)</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
+                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
                            <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                            <Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">
-                               {stats.bySpec.slice(0, 10).map((entry, index) => (
-                                   <Cell key={`cell-${index}`} fill={getSpecColor(entry.name)} />
-                               ))}
+                               {stats.bySpec.slice(0, 10).map((entry, index) => <Cell key={`cell-${index}`} fill={getSpecColor(entry.name)} />)}
                            </Bar>
                            </BarChart></ResponsiveContainer></div>
                        </Card>
@@ -1147,7 +785,7 @@ export default function Dashboard() {
                        </Card>
                        <Card className="p-0 border-t-4 border-t-blue-400 lg:col-span-2 overflow-hidden">
                            <div className="p-6 pb-4 bg-white flex justify-between items-center">
-                               <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3><div className="flex items-center gap-2 mt-1"><p className="text-sm text-slate-500">Origem dos pacientes</p><button onClick={() => setIsLogScale(!isLogScale)} className={`flex items-center gap-1 px-2 py-0.5 text-[10px] rounded border ${isLogScale ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-500 border-slate-200'}`} title="Usar escala logarítmica para ver valores pequenos"><Scale size={12}/> {isLogScale ? 'Log' : 'Linear'}</button></div></div>
+                               <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3></div>
                                <ExportWidget targetId="table-city" fileName="tabela_cidades" dataForExcel={stats.byCity} />
                            </div>
                            <div className="overflow-x-auto">
@@ -1171,7 +809,7 @@ export default function Dashboard() {
                        </Card>
                    </div>
 
-                   {/* --- MATRIZ DE ATENDIMENTOS (CORRIGIDA) --- */}
+                   {/* --- MATRIZ DE ATENDIMENTOS --- */}
                    {activeUnit === '104' && (
                        <Card className="p-0 border-t-4 border-t-blue-600 mb-8 overflow-hidden">
                            <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div><ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} /></div>
@@ -1206,20 +844,13 @@ export default function Dashboard() {
                            </div>
                        </Card>
                    )}
-                   
-                   {activeUnit === '104' && (
-                       <Card className="p-6 mb-8">
-                           <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Produtividade por Profissional (Top 20)</h3>
-                           <div className="h-96 w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={stats.byProf} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={{fill: '#475569', fontSize: 11}} interval={0} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Legend wrapperStyle={{ paddingTop: '20px' }} />{stats.profKeys.map((key, index) => (<Bar key={key} dataKey={key} stackId="a" fill={COLORS[index % COLORS.length]} radius={[index === stats.profKeys.length - 1 ? 4 : 0, index === stats.profKeys.length - 1 ? 4 : 0, 0, 0]} />))}</BarChart></ResponsiveContainer></div>
-                       </Card>
-                   )}
 
-                   {/* --- TABELA DE PRODUTIVIDADE (CORRIGIDA) --- */}
+                   {/* --- TABELA DE PRODUTIVIDADE --- */}
                    <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
                        <div className="p-6 pb-4 bg-white flex justify-between items-center">
                            <div>
                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3>
-                               <p className="text-sm text-slate-500 mt-1">Detalhamento por turno (Diurno: 07h-18h59 | Noturno: 19h-06h59)</p>
+                               <p className="text-sm text-slate-500 mt-1">Detalhamento por turno</p>
                            </div>
                            <ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} />
                        </div>
@@ -1235,21 +866,20 @@ export default function Dashboard() {
                                            {activeUnit === '104' && (
                                                <>
                                                    <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-sky-50 text-sky-800">
-                                                       <div className="flex items-center justify-center gap-1"><Sun size={14}/> Plantão Diurno</div>
+                                                       <div className="flex items-center justify-center gap-1"><Sun size={14}/> Diurno</div>
                                                    </th>
                                                    <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-indigo-50 text-indigo-800">
-                                                       <div className="flex items-center justify-center gap-1"><Moon size={14}/> Plantão Noturno</div>
+                                                       <div className="flex items-center justify-center gap-1"><Moon size={14}/> Noturno</div>
                                                    </th>
                                                </>
                                            )}
                                            
-                                           <th rowSpan="2" className="px-6 py-3 font-bold border-b border-slate-200 text-right align-middle bg-slate-200">Total Geral</th>
+                                           <th rowSpan="2" className="px-6 py-3 font-bold border-b border-slate-200 text-right align-middle bg-slate-200">Total</th>
                                        </tr>
                                        {activeUnit === '104' && (
                                            <tr>
                                                <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">1º Atend.</th>
                                                <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">Obs.</th>
-                                               
                                                <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">1º Atend.</th>
                                                <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">Obs.</th>
                                            </tr>
@@ -1257,27 +887,21 @@ export default function Dashboard() {
                                    </thead>
                                    <tbody className="divide-y divide-slate-100">
                                        {stats.allProfs.map((prof, index) => (
-                                           <tr key={index} className="bg-white hover:bg-slate-50 transition-colors nao-cortar">
-                                               <td className="px-6 py-3 font-medium text-slate-900 whitespace-nowrap border-r border-slate-100 text-left">{prof.name}</td>
+                                           <tr key={index} className="bg-white hover:bg-slate-50 transition-colors">
+                                               <td className="px-6 py-3 font-medium text-slate-900 border-r border-slate-100 text-left">{prof.name}</td>
                                                <td className="px-4 py-3 text-center border-r border-slate-100"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td>
                                                <td className="px-4 py-3 text-center text-slate-500 border-r border-slate-100">{prof.avgPerDay.toLocaleString()}</td>
-                                               
                                                {activeUnit === '104' && (
                                                    <>
                                                        <td className="px-4 py-3 text-right font-medium text-sky-700 bg-sky-50/20 border-r border-sky-100">{prof.diurno_atend > 0 ? prof.diurno_atend : '-'}</td>
                                                        <td className="px-4 py-3 text-right font-medium text-amber-600 bg-sky-50/20 border-r border-slate-200">{prof.diurno_obs > 0 ? prof.diurno_obs : '-'}</td>
-                                                       
                                                        <td className="px-4 py-3 text-right font-medium text-indigo-700 bg-indigo-50/20 border-r border-indigo-100">{prof.noturno_atend > 0 ? prof.noturno_atend : '-'}</td>
                                                        <td className="px-4 py-3 text-right font-medium text-amber-600 bg-indigo-50/20 border-r border-slate-200">{prof.noturno_obs > 0 ? prof.noturno_obs : '-'}</td>
                                                    </>
                                                )}
-                                               
                                                <td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td>
                                            </tr>
                                        ))}
-                                       {stats.allProfs.length === 0 && (
-                                           <tr><td colSpan={activeUnit === '104' ? 8 : 4} className="px-6 py-8 text-center text-slate-400">Nenhum profissional encontrado com os filtros atuais.</td></tr>
-                                       )}
                                    </tbody>
                                </table>
                            </div>
@@ -1289,7 +913,7 @@ export default function Dashboard() {
            <footer className="mt-12 py-6 border-t border-slate-200 flex flex-col items-center gap-4 text-center">
              <div>
                <p className="text-slate-600 font-medium">Desenvolvido por <strong className="text-blue-700">Leandro de Paula Rodrigues - Vivver Sistemas</strong></p>
-               <p className="text-xs text-slate-400 mt-1">Relatório gerado automaticamente • {new Date().toLocaleDateString()}</p>
+               <p className="text-xs text-slate-400 mt-1">Relatório gerado automaticamente</p>
              </div>
            </footer>
        </div>
