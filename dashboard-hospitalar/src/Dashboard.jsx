@@ -16,7 +16,7 @@ import { ExportWidget } from './components/ExportWidget.jsx';
 
 import { 
   COLORS, YEAR_COLORS, MONTH_NAMES, WEEK_DAYS, PERIOD_PRESETS, 
-  HOSPITAL_PROCEDURE_MAP, OBS_CODES 
+  HOSPITAL_PROCEDURE_MAP, OBS_CODES, ATEND_CODES 
 } from './utils/constants.js';
 
 import { getShift, fixEncoding } from './utils/helpers.js';
@@ -157,9 +157,19 @@ export default function Dashboard() {
         const nomeProc = (item.procName || "PROCEDIMENTO NÃO INFORMADO").toUpperCase();
         
         if (activeUnit === '104') {
-          // O processador já separou os códigos, por isso aqui mapeamos diretamente.
-          newItem.display_procedure = HOSPITAL_PROCEDURE_MAP[codProc] || item.procName || "Outros Procedimentos";
-          newItem.isValid = true; 
+          // ==========================================
+          // FILTRO SUPER RIGOROSO PARA A UNIDADE 104
+          // ==========================================
+          if (OBS_CODES.includes(codProc)) {
+              newItem.display_procedure = 'Pacientes em observação';
+              newItem.isValid = true;
+          } else if (ATEND_CODES.includes(codProc)) {
+              newItem.display_procedure = 'Primeiro atendimento';
+              newItem.isValid = true;
+          } else {
+              // Descarta procedimentos secundários que inflam os números
+              newItem.isValid = false; 
+          }
         } else {
           if (nomeProc.includes("ELETROCARDIOGRAMA")) newItem.isValid = false;
           else { newItem.display_procedure = item.procName || "Sem Nome"; newItem.isValid = true; }
@@ -242,7 +252,7 @@ export default function Dashboard() {
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
       
-      const isObs = OBS_CODES.includes(String(item.procCode));
+      const isObs = OBS_CODES.includes(String(item.procCode).trim());
 
       if (activeUnit === '104') {
         const specName = item.spec || "Não informado";
@@ -267,7 +277,6 @@ export default function Dashboard() {
       if (activeUnit === '104') byProfObj[prof][item.display_procedure] = (byProfObj[prof][item.display_procedure] || 0) + 1;
       byProfObj[prof].total += 1;
       
-      // Conta os dias únicos, que agora não têm a hora a atrapalhar!
       if (item.date) byProfObj[prof].days.add(item.date);
 
       const shift = getShift(item.time);

@@ -18,6 +18,8 @@ export const HOSPITAL_PROCEDURE_MAP = {
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
 
+// --- DEFININDO RIGOROSAMENTE OS CÓDIGOS ---
+export const ATEND_CODES = ['301060096', '0301060096', '9999999984'];
 export const OBS_CODES = ['301060029', '0301060029', '9990000096']; 
 
 export const COLUMN_ALIASES = {
@@ -25,23 +27,19 @@ export const COLUMN_ALIASES = {
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade', 'nomfantasia'],
   date: ['data_atendimento', 'Data atendimento', 'Data', 'dt_atend'],
   time: ['hora_atendimento', 'Hora atendimento', 'Hora', 'hr_atend', 'data_hora'], 
-  
-  // AQUI: Adicionamos o mapeamento para pegar o código do CBO
   cboCode: ['codespecialidade', 'codigo_especialidade', 'cod_especialidade'], 
-  
   spec: ['nome_especialidade', 'Nome especialidade', 'Especialidade', 'CBO', 'cbo_descricao', 'nomespecialidade'],
   prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico', 'nomprofissional', 'codprofissional'],
-  
   procCode: ['codigo_procedimento', 'codigo_procedimentos', 'Codigo procedimento', 'Cód. Procedimento'],
   procName: ['nome_procedimento', 'Nome procedimento', 'Procedimento'],
-  
-  // AQUI: Removido o 'codmunicipiores' para ele pegar obrigatoriamente o nome!
   city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente', 'nome_municipio_paciente', 'nommunicipio'], 
-  
   age: ['idade', 'Idade', 'Idade atendimento paciente', 'idade_atendimento_paciente'],
   gender: ['sexo', 'Sexo', 'Genero', 'indsexo'],
   idEvolucao: ['id_evolucao', 'Id Evolucao', 'ID EVOLUÇÃO'],
-  dataEvolucao: ['data_evolucao', 'Data Evolucao', 'DATA EVOLUÇÃO']
+  dataEvolucao: ['data_evolucao', 'Data Evolucao', 'DATA EVOLUÇÃO'],
+  
+  // AQUI: Capturando a coluna "tipo" para filtrarmos as internações
+  tipo: ['tipo', 'Tipo', 'TIPO']
 };
 
 export const DEMAND_ALIASES = {
