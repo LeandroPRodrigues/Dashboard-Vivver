@@ -121,7 +121,7 @@ export const processFiles = async (files) => {
                     }
                 });
 
-                // IGNORAR ENFERMEIROS E TÉCNICOS
+                // IGNORA ENFERMEIROS E TÉCNICOS
                 const cbo = String(baseRowObj.cboCode || '').trim();
                 if (cbo === '223505' || cbo === '322205') return; 
 
@@ -131,7 +131,7 @@ export const processFiles = async (files) => {
                 baseRowObj.mes_final = parsedDate.mes;
                 baseRowObj.dateObj = parsedDate.dt;
                 
-                // CORREÇÃO: Força a data a ser SÓ a data, arrancando a hora que vem do arquivo novo
+                // LIMPEZA DA DATA: Garante que "2026-03-02 10:20:00" vire só "2026-03-02" para contar os dias perfeitamente!
                 if (!baseRowObj.date && rawDateValue) baseRowObj.date = String(rawDateValue).split(' ')[0];
                 if (baseRowObj.date) baseRowObj.date = String(baseRowObj.date).split(' ')[0];
 
@@ -140,11 +140,18 @@ export const processFiles = async (files) => {
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                // CORREÇÃO: Não dividimos mais a linha. Processamos ela inteira como um único atendimento.
-                const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
-                baseRowObj.hasEvolucao = checkEvolucao(baseRowObj.idEvolucao) || checkEvolucao(baseRowObj.dataEvolucao);
+                // VOLTAMOS COM A REGRA QUE VOCÊ QUER: DIVIDIR A CÉLULA PARA CONTAR 1 ATEND. E 1 OBS.
+                const procCodes = baseRowObj.procCode ? String(baseRowObj.procCode).split('-') : [''];
                 
-                newAtendimentos.push(baseRowObj);
+                procCodes.forEach((code, index) => {
+                    const rowObj = { ...baseRowObj, procCode: code.trim() };
+                    const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
+                    
+                    // Contabiliza a evolução real (id_evolucao) apenas na primeira vez para não duplicar no Card verde do topo
+                    rowObj.hasEvolucao = index === 0 ? (checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao)) : false;
+                    
+                    newAtendimentos.push(rowObj);
+                });
             });
         }
     }

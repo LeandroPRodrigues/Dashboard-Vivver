@@ -137,7 +137,7 @@ export default function Dashboard() {
         }
         
         if (newAtendimentos.length === 0 && newDemanda.length === 0) {
-            alert("Nenhum dado válido encontrado. Verifique se o formato do arquivo está correto.");
+            alert("Nenhum dado válido encontrado. Verifique se o formato do ficheiro está correto.");
         }
     } catch (error) {
         console.error("Erro no processamento:", error);
@@ -157,18 +157,8 @@ export default function Dashboard() {
         const nomeProc = (item.procName || "PROCEDIMENTO NÃO INFORMADO").toUpperCase();
         
         if (activeUnit === '104') {
-          // CORREÇÃO AQUI: Verifica se o código múltiplo contém "Observação" ou "Primeiro Atendimento"
-          const codesArray = codProc.split('-');
-          let mappedName = null;
-          
-          if (codesArray.some(c => OBS_CODES.includes(c.trim()))) {
-              mappedName = 'Pacientes em observação';
-          } else {
-              const foundCode = codesArray.find(c => HOSPITAL_PROCEDURE_MAP[c.trim()]);
-              if (foundCode) mappedName = HOSPITAL_PROCEDURE_MAP[foundCode.trim()];
-          }
-          
-          newItem.display_procedure = mappedName || item.procName || "Outros Procedimentos";
+          // O processador já separou os códigos, por isso aqui mapeamos diretamente.
+          newItem.display_procedure = HOSPITAL_PROCEDURE_MAP[codProc] || item.procName || "Outros Procedimentos";
           newItem.isValid = true; 
         } else {
           if (nomeProc.includes("ELETROCARDIOGRAMA")) newItem.isValid = false;
@@ -252,8 +242,7 @@ export default function Dashboard() {
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
       
-      // CORREÇÃO: Descobre se o item é observação, mesmo que tenha múltiplos códigos unidos por hífen
-      const isObs = item.procCode ? String(item.procCode).split('-').some(c => OBS_CODES.includes(c.trim())) : false;
+      const isObs = OBS_CODES.includes(String(item.procCode));
 
       if (activeUnit === '104') {
         const specName = item.spec || "Não informado";
@@ -278,7 +267,7 @@ export default function Dashboard() {
       if (activeUnit === '104') byProfObj[prof][item.display_procedure] = (byProfObj[prof][item.display_procedure] || 0) + 1;
       byProfObj[prof].total += 1;
       
-      // Como a data já foi limpa no Passo 1, aqui ele só adiciona "2026-03-02" no SET de dias, contando corretamente!
+      // Conta os dias únicos, que agora não têm a hora a atrapalhar!
       if (item.date) byProfObj[prof].days.add(item.date);
 
       const shift = getShift(item.time);
