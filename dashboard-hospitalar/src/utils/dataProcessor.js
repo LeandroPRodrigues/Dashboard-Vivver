@@ -1,20 +1,26 @@
 import * as XLSX from 'xlsx';
-import { COLUMN_ALIASES, DEMAND_ALIASES } from './constants';
-import { fixEncoding, normalizeHeader } from './helpers';
+import { COLUMN_ALIASES, DEMAND_ALIASES } from './constants.js';
+import { fixEncoding, normalizeHeader } from './helpers.js';
 
+// Função para tratar as datas (Ex: "2026-03-02 10:20:00", "02/03/2026", ou serial do excel)
 const parseExcelDate = (dateVal) => {
     if (!dateVal) return null;
+    
+    // Se for formato do Excel (número)
     if (typeof dateVal === 'number') {
         const parsed = XLSX.SSF.parse_date_code(dateVal);
         return { ano: String(parsed.y), mes: parsed.m, dt: new Date(parsed.y, parsed.m - 1, parsed.d) };
     }
-    const strDate = String(dateVal).split(' ')[0]; // remove time if exists
+    
+    // Pegar apenas a parte da data, ignorando a hora "10:20:00"
+    const strDate = String(dateVal).trim().split(' ')[0]; 
     const parts = strDate.split(/[\/\-]/);
+    
     if (parts.length === 3) {
         if (parts[2].length === 4) { // DD/MM/YYYY
-            return { ano: parts[2], mes: parseInt(parts[1]), dt: new Date(parts[2], parts[1] - 1, parts[0]) };
+            return { ano: parts[2], mes: parseInt(parts[1], 10), dt: new Date(parts[2], parseInt(parts[1], 10) - 1, parts[0]) };
         } else if (parts[0].length === 4) { // YYYY-MM-DD
-            return { ano: parts[0], mes: parseInt(parts[1]), dt: new Date(parts[0], parts[1] - 1, parts[2]) };
+            return { ano: parts[0], mes: parseInt(parts[1], 10), dt: new Date(parts[0], parseInt(parts[1], 10) - 1, parts[2]) };
         }
     }
     return { ano: 'N/A', mes: 0, dt: null };
@@ -26,17 +32,41 @@ export const processFiles = async (files) => {
     let isDemandaFile = false;
     let fileReportTitle = '';
 
-    const readFileData = (file) => {
-        return new Promise((resolve, reject) => {
+    // Ledor específico para CSV (Resolve o problema do ponto e vírgula e acentos)
+    const readAsCSV = (file) => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                const rowsText = text.split(/\r?\n/);
+                if (rowsText.length === 0) resolve([]);
+
+                const firstLine = rowsText[0];
+                const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+                
+                const rows = rowsText.filter(line => line.trim() !== "").map(line => {
+                    // Divide por ponto-e-vírgula ignorando os que estiverem dentro de aspas duplas
+                    return line.split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(val => val.replace(/^"|"$/g, '').trim());
+                });
+                resolve(rows);
+            };
+            // ISO-8859-1 para ler corretamente ç, ã, é, etc...
+            reader.readAsText(file, 'ISO-8859-1');
+        });
+    };
+
+    // Ledor específico para XLS/XLSX
+    const readAsExcel = (file) => {
+         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
                     const data = new Uint8Array(e.target.result);
-                    // Lendo arquivo via XLSX (suporta xls, xlsx, csv)
                     const workbook = XLSX.read(data, { type: 'array' });
                     const firstSheetName = workbook.SheetNames[0];
                     const sheet = workbook.Sheets[firstSheetName];
-                    resolve(sheet);
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                    resolve(rows);
                 } catch (error) {
                     reject(error);
                 }
@@ -46,18 +76,25 @@ export const processFiles = async (files) => {
     };
 
     for (const file of files) {
-        const sheet = await readFileData(file);
-        // Transformando a aba em array de arrays
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        let rows = [];
+        const ext = file.name.split('.').pop().toLowerCase();
+        
+        // Decide como ler baseado na extensão do arquivo
+        if (ext === 'csv') {
+            rows = await readAsCSV(file);
+        } else {
+            rows = await readAsExcel(file);
+        }
+
         if (rows.length < 2) continue;
 
-        // 1. Procurar a linha real de cabeçalho (Ignorando a 1ª linha suja do relatório novo)
+        // 1. Procurar a linha real de cabeçalho (Ignorando as linhas iniciais "sujas")
         let headerIdx = 0;
         for (let i = 0; i < Math.min(10, rows.length); i++) {
             const rowStr = rows[i].join('').toLowerCase();
             if (rowStr.includes('codigo_procedimento') || rowStr.includes('data_atendimento') || 
                 rowStr.includes('data_solicitacao') || rowStr.includes('numprontuario') || 
-                rowStr.includes('nome_paciente')) {
+                rowStr.includes('codigo_municipio')) {
                 headerIdx = i;
                 break;
             }
@@ -108,6 +145,8 @@ export const processFiles = async (files) => {
                         if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) {
                             val = fixEncoding(val);
                         }
+                        
+                        // Isola somente a hora se vier junto com a data
                         if (key === 'time' && val.includes(' ')) {
                             const parts = val.split(' ');
                             val = parts[1] && parts[1].includes(':') ? parts[1] : parts[0];
@@ -116,11 +155,18 @@ export const processFiles = async (files) => {
                     }
                 });
 
-                // Parse da Data
-                let parsedDate = parseExcelDate(baseRowObj.date);
+                // Se não mapeou "date" diretamente, mas tem "time" (ex: data_hora), vamos pegar a data do "time"
+                const rawDateValue = baseRowObj.date || baseRowObj.time; 
+                
+                let parsedDate = parseExcelDate(rawDateValue);
                 baseRowObj.ano_final = parsedDate.ano;
                 baseRowObj.mes_final = parsedDate.mes;
                 baseRowObj.dateObj = parsedDate.dt;
+                
+                // Se a data não estava preenchida, preenche agora baseada na extração
+                if (!baseRowObj.date && rawDateValue) {
+                    baseRowObj.date = rawDateValue.split(' ')[0];
+                }
 
                 // Parse da Idade
                 if (baseRowObj.age) {
@@ -135,7 +181,8 @@ export const processFiles = async (files) => {
                     const rowObj = { ...baseRowObj, procCode: code.trim() };
                     
                     // 3. Contabilizar Evoluções
-                    rowObj.hasEvolucao = !!rowObj.idEvolucao || !!rowObj.dataEvolucao;
+                    const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
+                    rowObj.hasEvolucao = checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao);
                     
                     newAtendimentos.push(rowObj);
                 });
