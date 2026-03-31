@@ -25,11 +25,19 @@ export const COLUMN_ALIASES = {
   unitName: ['nome_unidade', 'Nome unidade', 'Unidade', 'desc_unidade', 'nomfantasia'],
   date: ['data_atendimento', 'Data atendimento', 'Data', 'dt_atend'],
   time: ['hora_atendimento', 'Hora atendimento', 'Hora', 'hr_atend', 'data_hora'], 
+  
+  // AQUI: Adicionamos o mapeamento para pegar o código do CBO
+  cboCode: ['codespecialidade', 'codigo_especialidade', 'cod_especialidade'], 
+  
   spec: ['nome_especialidade', 'Nome especialidade', 'Especialidade', 'CBO', 'cbo_descricao', 'nomespecialidade'],
   prof: ['nome_profissional', 'Profissional', 'Nome do Profissional', 'Medico', 'nomprofissional', 'codprofissional'],
+  
   procCode: ['codigo_procedimento', 'codigo_procedimentos', 'Codigo procedimento', 'Cód. Procedimento'],
   procName: ['nome_procedimento', 'Nome procedimento', 'Procedimento'],
-  city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente', 'nome_municipio_paciente', 'nommunicipio', 'codmunicipiores'], 
+  
+  // AQUI: Removido o 'codmunicipiores' para ele pegar obrigatoriamente o nome!
+  city: ['municipio', 'Municipio', 'Cidade', 'municipio_paciente', 'nome_municipio_paciente', 'nommunicipio'], 
+  
   age: ['idade', 'Idade', 'Idade atendimento paciente', 'idade_atendimento_paciente'],
   gender: ['sexo', 'Sexo', 'Genero', 'indsexo'],
   idEvolucao: ['id_evolucao', 'Id Evolucao', 'ID EVOLUÇÃO'],

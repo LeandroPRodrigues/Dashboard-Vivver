@@ -31,7 +31,7 @@ export const processFiles = async (files) => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 const text = e.target.result;
-                // A MÁGICA: Verifica se tem ponto-e-vírgula e não é um binário zip (PK) ou OLE (ÐÏ)
+                // Verifica se tem ponto-e-vírgula e não é um binário zip (PK) ou OLE (ÐÏ)
                 if (text.includes(';') && !text.startsWith('PK') && !text.startsWith('ÐÏ')) {
                     const rowsText = text.split(/\r?\n/);
                     const rows = rowsText.filter(line => line.trim() !== "").map(line => {
@@ -53,7 +53,7 @@ export const processFiles = async (files) => {
                     readerBinary.readAsArrayBuffer(file);
                 }
             };
-            reader.readAsText(file, 'ISO-8859-1'); // Lê acentuação corretamente (PT-BR)
+            reader.readAsText(file, 'ISO-8859-1'); // Lê acentuação corretamente
         });
     };
 
@@ -65,7 +65,8 @@ export const processFiles = async (files) => {
         for (let i = 0; i < Math.min(10, rows.length); i++) {
             const rowStr = rows[i].join('').toLowerCase();
             if (rowStr.includes('codigo_procedimento') || rowStr.includes('codigo_municipio') || 
-                rowStr.includes('data_atendimento') || rowStr.includes('data_solicitacao')) {
+                rowStr.includes('data_atendimento') || rowStr.includes('data_solicitacao') ||
+                rowStr.includes('codespecialidade')) {
                 headerIdx = i;
                 break;
             }
@@ -121,6 +122,15 @@ export const processFiles = async (files) => {
                         baseRowObj[key] = val;
                     }
                 });
+
+                // =========================================================
+                // NOVA REGRA: IGNORAR ENFERMEIROS E TÉCNICOS DE ENFERMAGEM
+                // =========================================================
+                const cbo = String(baseRowObj.cboCode || '').trim();
+                if (cbo === '223505' || cbo === '322205') {
+                    return; // Pula esta linha e não contabiliza nada dela!
+                }
+                // =========================================================
 
                 const rawDateValue = baseRowObj.date || baseRowObj.time; 
                 let parsedDate = parseExcelDate(rawDateValue);
