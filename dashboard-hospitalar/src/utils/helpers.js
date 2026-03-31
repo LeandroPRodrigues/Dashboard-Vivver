@@ -50,7 +50,10 @@ export const getShift = (timeStr) => {
     if (!timeStr) return 'Indefinido';
     const hour = parseInt(timeStr.split(':')[0], 10);
     if (isNaN(hour)) return 'Indefinido';
-    if (hour >= 7 && hour <= 18) return 'Diurno';
+    
+    // REGRA DE TURNOS EXATA: 
+    // >= 7 e < 19 significa das 07:00:00 até as 18:59:59
+    if (hour >= 7 && hour < 19) return 'Diurno';
     return 'Noturno';
 };
 

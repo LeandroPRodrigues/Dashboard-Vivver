@@ -112,11 +112,6 @@ export const processFiles = async (files) => {
                     if (values[index] !== undefined && values[index] !== "") {
                         let val = typeof values[index] === 'string' ? values[index].trim() : String(values[index]);
                         if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) val = fixEncoding(val);
-                        
-                        if (key === 'time' && val.includes(' ')) {
-                            const parts = val.split(' ');
-                            val = parts[1] && parts[1].includes(':') ? parts[1] : parts[0];
-                        }
                         baseRowObj[key] = val;
                     }
                 });
@@ -125,35 +120,54 @@ export const processFiles = async (files) => {
                 const cbo = String(baseRowObj.cboCode || '').trim();
                 if (cbo === '223505' || cbo === '322205') return; 
 
-                // 2. NOVA REGRA: IGNORAR INTERNAÇÕES (TIPO 'I')
+                // 2. IGNORAR INTERNAÇÕES (TIPO 'I')
                 const tipoAtendimento = String(baseRowObj.tipo || '').trim().toUpperCase();
                 if (tipoAtendimento === 'I' || tipoAtendimento === 'INTERNAÇÃO') return;
 
-                const rawDateValue = baseRowObj.date || baseRowObj.time; 
-                let parsedDate = parseExcelDate(rawDateValue);
+                // 3. SEPARAÇÃO DATA E HORA DEFINITIVA (Ex: 01/03/2026 09:58:00)
+                let dateStr = String(baseRowObj.date || '');
+                let timeStr = String(baseRowObj.time || '');
+
+                if (timeStr.includes(' ')) {
+                    const parts = timeStr.trim().replace(/\s+/g, ' ').split(' ');
+                    dateStr = parts[0];
+                    timeStr = parts[1];
+                } else if (dateStr.includes(' ')) {
+                    const parts = dateStr.trim().replace(/\s+/g, ' ').split(' ');
+                    dateStr = parts[0];
+                    timeStr = parts[1];
+                }
+
+                if (!timeStr) timeStr = "00:00:00"; // Segurança caso venha sem hora
+
+                baseRowObj.date = dateStr;
+                baseRowObj.time = timeStr;
+
+                let parsedDate = parseExcelDate(baseRowObj.date);
                 baseRowObj.ano_final = parsedDate.ano;
                 baseRowObj.mes_final = parsedDate.mes;
                 baseRowObj.dateObj = parsedDate.dt;
-                
-                if (!baseRowObj.date && rawDateValue) baseRowObj.date = String(rawDateValue).split(' ')[0];
-                if (baseRowObj.date) baseRowObj.date = String(baseRowObj.date).split(' ')[0];
 
                 if (baseRowObj.age) {
                     const age = parseInt(baseRowObj.age);
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                // Divide a célula e cria uma linha para cada procedimento (Garante os pontos do médico!)
-                const procCodes = baseRowObj.procCode ? String(baseRowObj.procCode).split('-') : [''];
-                
-                procCodes.forEach((code, index) => {
-                    const rowObj = { ...baseRowObj, procCode: code.trim() };
-                    const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
-                    
-                    rowObj.hasEvolucao = index === 0 ? (checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao)) : false;
-                    
-                    newAtendimentos.push(rowObj);
-                });
+                // 4. REGRA DE OURO: 1 LINHA = 1 ATENDIMENTO OU 1 EVOLUÇÃO
+                // Verifica se tem algo válido no id_evolucao (ignorando strings vazias como '""')
+                const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null" && String(val).trim() !== '""';
+                const isEvolucao = checkEvolucao(baseRowObj.idEvolucao);
+
+                baseRowObj.hasEvolucao = isEvolucao;
+
+                if (isEvolucao) {
+                    baseRowObj.procCode = '0301060029'; // Força a ser lido como Observação/Evolução
+                } else {
+                    baseRowObj.procCode = '0301060096'; // Força a ser lido como 1º Atendimento
+                }
+
+                // Insere a linha única (sem duplicar)
+                newAtendimentos.push(baseRowObj);
             });
         }
     }
