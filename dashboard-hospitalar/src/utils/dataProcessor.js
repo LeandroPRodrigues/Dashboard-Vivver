@@ -2,24 +2,18 @@ import * as XLSX from 'xlsx';
 import { COLUMN_ALIASES, DEMAND_ALIASES } from './constants.js';
 import { fixEncoding, normalizeHeader } from './helpers.js';
 
-// Função para tratar as datas (Ex: "2026-03-02 10:20:00", "02/03/2026", ou serial do excel)
 const parseExcelDate = (dateVal) => {
     if (!dateVal) return null;
-    
-    // Se for formato do Excel (número)
     if (typeof dateVal === 'number') {
         const parsed = XLSX.SSF.parse_date_code(dateVal);
         return { ano: String(parsed.y), mes: parsed.m, dt: new Date(parsed.y, parsed.m - 1, parsed.d) };
     }
-    
-    // Pegar apenas a parte da data, ignorando a hora "10:20:00"
     const strDate = String(dateVal).trim().split(' ')[0]; 
     const parts = strDate.split(/[\/\-]/);
-    
     if (parts.length === 3) {
-        if (parts[2].length === 4) { // DD/MM/YYYY
+        if (parts[2].length === 4) { 
             return { ano: parts[2], mes: parseInt(parts[1], 10), dt: new Date(parts[2], parseInt(parts[1], 10) - 1, parts[0]) };
-        } else if (parts[0].length === 4) { // YYYY-MM-DD
+        } else if (parts[0].length === 4) { 
             return { ano: parts[0], mes: parseInt(parts[1], 10), dt: new Date(parts[0], parseInt(parts[1], 10) - 1, parts[2]) };
         }
     }
@@ -32,69 +26,46 @@ export const processFiles = async (files) => {
     let isDemandaFile = false;
     let fileReportTitle = '';
 
-    // Ledor específico para CSV (Resolve o problema do ponto e vírgula e acentos)
-    const readAsCSV = (file) => {
+    const readAnyFile = (file) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 const text = e.target.result;
-                const rowsText = text.split(/\r?\n/);
-                if (rowsText.length === 0) resolve([]);
-
-                const firstLine = rowsText[0];
-                const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
-                
-                const rows = rowsText.filter(line => line.trim() !== "").map(line => {
-                    // Divide por ponto-e-vírgula ignorando os que estiverem dentro de aspas duplas
-                    return line.split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(val => val.replace(/^"|"$/g, '').trim());
-                });
-                resolve(rows);
-            };
-            // ISO-8859-1 para ler corretamente ç, ã, é, etc...
-            reader.readAsText(file, 'ISO-8859-1');
-        });
-    };
-
-    // Ledor específico para XLS/XLSX
-    const readAsExcel = (file) => {
-         return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheetName = workbook.SheetNames[0];
-                    const sheet = workbook.Sheets[firstSheetName];
-                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                // A MÁGICA: Verifica se tem ponto-e-vírgula e não é um binário zip (PK) ou OLE (ÐÏ)
+                if (text.includes(';') && !text.startsWith('PK') && !text.startsWith('ÐÏ')) {
+                    const rowsText = text.split(/\r?\n/);
+                    const rows = rowsText.filter(line => line.trim() !== "").map(line => {
+                        return line.split(';').map(val => val.replace(/^"|"$/g, '').trim());
+                    });
                     resolve(rows);
-                } catch (error) {
-                    reject(error);
+                } else {
+                    // Se for Excel real (.xlsx)
+                    const readerBinary = new FileReader();
+                    readerBinary.onload = (eBin) => {
+                        try {
+                            const data = new Uint8Array(eBin.target.result);
+                            const workbook = XLSX.read(data, { type: 'array' });
+                            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                            resolve(rows);
+                        } catch (err) { resolve([]); }
+                    };
+                    readerBinary.readAsArrayBuffer(file);
                 }
             };
-            reader.readAsArrayBuffer(file);
+            reader.readAsText(file, 'ISO-8859-1'); // Lê acentuação corretamente (PT-BR)
         });
     };
 
     for (const file of files) {
-        let rows = [];
-        const ext = file.name.split('.').pop().toLowerCase();
-        
-        // Decide como ler baseado na extensão do arquivo
-        if (ext === 'csv') {
-            rows = await readAsCSV(file);
-        } else {
-            rows = await readAsExcel(file);
-        }
-
+        const rows = await readAnyFile(file);
         if (rows.length < 2) continue;
 
-        // 1. Procurar a linha real de cabeçalho (Ignorando as linhas iniciais "sujas")
         let headerIdx = 0;
         for (let i = 0; i < Math.min(10, rows.length); i++) {
             const rowStr = rows[i].join('').toLowerCase();
-            if (rowStr.includes('codigo_procedimento') || rowStr.includes('data_atendimento') || 
-                rowStr.includes('data_solicitacao') || rowStr.includes('numprontuario') || 
-                rowStr.includes('codigo_municipio')) {
+            if (rowStr.includes('codigo_procedimento') || rowStr.includes('codigo_municipio') || 
+                rowStr.includes('data_atendimento') || rowStr.includes('data_solicitacao')) {
                 headerIdx = i;
                 break;
             }
@@ -103,7 +74,6 @@ export const processFiles = async (files) => {
         const rawHeaders = rows[headerIdx].map(h => String(h).trim());
         const dataRows = rows.slice(headerIdx + 1);
 
-        // Verifica se é arquivo de demanda ou atendimentos
         const isDemanda = rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'reqDate') || 
                           rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'unitRef');
 
@@ -142,11 +112,8 @@ export const processFiles = async (files) => {
                 headerMap.forEach((key, index) => {
                     if (values[index] !== undefined && values[index] !== "") {
                         let val = typeof values[index] === 'string' ? values[index].trim() : String(values[index]);
-                        if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) {
-                            val = fixEncoding(val);
-                        }
+                        if (['prof', 'spec', 'procName', 'unitName', 'city', 'nome_paciente'].includes(key)) val = fixEncoding(val);
                         
-                        // Isola somente a hora se vier junto com a data
                         if (key === 'time' && val.includes(' ')) {
                             const parts = val.split(' ');
                             val = parts[1] && parts[1].includes(':') ? parts[1] : parts[0];
@@ -155,32 +122,23 @@ export const processFiles = async (files) => {
                     }
                 });
 
-                // Se não mapeou "date" diretamente, mas tem "time" (ex: data_hora), vamos pegar a data do "time"
                 const rawDateValue = baseRowObj.date || baseRowObj.time; 
-                
                 let parsedDate = parseExcelDate(rawDateValue);
                 baseRowObj.ano_final = parsedDate.ano;
                 baseRowObj.mes_final = parsedDate.mes;
                 baseRowObj.dateObj = parsedDate.dt;
                 
-                // Se a data não estava preenchida, preenche agora baseada na extração
-                if (!baseRowObj.date && rawDateValue) {
-                    baseRowObj.date = rawDateValue.split(' ')[0];
-                }
+                if (!baseRowObj.date && rawDateValue) baseRowObj.date = rawDateValue.split(' ')[0];
 
-                // Parse da Idade
                 if (baseRowObj.age) {
                     const age = parseInt(baseRowObj.age);
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                // 2. Dividir múltiplos procedimentos (Ex: 0301060029-0301060096)
                 const procCodes = baseRowObj.procCode ? String(baseRowObj.procCode).split('-') : [''];
                 
                 procCodes.forEach(code => {
                     const rowObj = { ...baseRowObj, procCode: code.trim() };
-                    
-                    // 3. Contabilizar Evoluções
                     const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
                     rowObj.hasEvolucao = checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao);
                     

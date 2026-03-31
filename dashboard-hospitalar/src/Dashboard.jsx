@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, X, Table, 
-  ArrowRightLeft, LayoutDashboard, MapPin, Users, Scale, Watch, Printer, List, Clock, Sun, Moon, Trash2, ClipboardPlus
+  ArrowRightLeft, LayoutDashboard, MapPin, Users, Watch, Printer, List, Clock, Sun, Moon, Trash2, ClipboardPlus
 } from 'lucide-react';
 
 // --- IMPORTAÇÕES MODULARIZADAS ---
@@ -22,7 +22,6 @@ import {
 import { getShift, fixEncoding } from './utils/helpers.js';
 import { processFiles } from './utils/dataProcessor.js';
 
-// --- MOCK DATA ---
 const generateMockData = () => {
   const mock = [];
   const specs = ['Clínico Geral', 'Pediatria', 'Ortopedia', 'Cardiologia', 'Dermatologia'];
@@ -38,14 +37,11 @@ const generateMockData = () => {
         mock.push({
           unitCode: "104", unitName: "HOSPITAL RAYMUNDO CAMPOS", mes_final: month, ano_final: year,
           date: `${day < 10 ? '0'+day : day}/${month < 10 ? '0'+month : month}/${year}`, 
-          dateObj: dateObj,
-          time: `${hour < 10 ? '0'+hour : hour}:${min}`,
+          dateObj: dateObj, time: `${hour < 10 ? '0'+hour : hour}:${min}`,
           spec: specs[Math.floor(Math.random() * specs.length)],
           prof: `Dr. Mock ${i}`, procCode: i % 5 === 0 ? '301060029' : '301060096', 
-          procName: "PROCEDIMENTO HOSPITALAR",
-          city: "OURO BRANCO - MG",
-          age: age,
-          hasEvolucao: Math.random() > 0.7, // 30% de chance de ter evolução no mock
+          procName: "PROCEDIMENTO HOSPITALAR", city: "OURO BRANCO - MG", age: age,
+          hasEvolucao: Math.random() > 0.7, 
           ageGroup: age < 12 ? 'Criança (0-12)' : age < 18 ? 'Adolescente (13-18)' : age < 60 ? 'Adulto (19-59)' : 'Idoso (60+)'
         });
     }
@@ -62,7 +58,6 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(true);
   const [isComparisonMode, setIsComparisonMode] = useState(false);
-  const [isLogScale, setIsLogScale] = useState(false);
 
   // --- STATES ATENDIMENTOS ---
   const [selectedYear, setSelectedYear] = useState('all');
@@ -94,13 +89,13 @@ export default function Dashboard() {
       let name = fixEncoding(item.unitName || `Unidade ${code}`);
       if (code && code !== "undefined" && code !== "null" && !unitsMap.has(code)) unitsMap.set(code, name);
     });
-    if (isDemoData && unitsMap.size === 0) return [{ code: '104', name: 'HOSPITAL RAYMUNDO CAMPOS' }, { code: '51', name: 'CENTRO DE ESPECIALIDADES' }];
+    if (isDemoData && unitsMap.size === 0) return [{ code: '104', name: 'HOSPITAL RAYMUNDO CAMPOS' }];
     return Array.from(unitsMap.entries()).map(([code, name]) => ({ code, name })).sort((a, b) => { if (a.code === '104') return -1; if (b.code === '104') return 1; return a.name.localeCompare(b.name); });
   }, [rawData, isDemoData]);
 
   const availableYears = useMemo(() => {
     if (!rawData) return [];
-    const years = new Set(rawData.map(d => d.ano_final).filter(y => y !== 'N/A'));
+    const years = new Set(rawData.map(d => String(d.ano_final)).filter(y => y !== 'N/A' && y !== 'undefined'));
     return Array.from(years).sort().reverse();
   }, [rawData]);
 
@@ -114,15 +109,12 @@ export default function Dashboard() {
 
   const handleClearData = () => {
       if(window.confirm("Tem certeza que deseja limpar todos os dados carregados?")) {
-          setRawData([]);
-          setDemandData([]);
-          setIsDemoData(true);
+          setRawData([]); setDemandData([]); setIsDemoData(true);
           setReportTitle('Painel de Gestão Hospitalar');
           try { setRawData(generateMockData()); } catch (e) {}
       }
   };
 
-  // --- UPLOAD USANDO O NOVO PROCESSADOR DE DADOS ---
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files);
     if (!files.length) return;
@@ -148,26 +140,33 @@ export default function Dashboard() {
                  setReportTitle(`Painel de Demanda Reprimida - ${fileReportTitle || 'Importado'}`);
             }
         }
+        
+        if (newAtendimentos.length === 0 && newDemanda.length === 0) {
+            alert("Nenhum dado válido encontrado. Verifique se o formato do arquivo está correto.");
+        }
     } catch (error) {
-        console.error("Erro no processamento do arquivo:", error);
-        alert("Erro ao ler o arquivo. Certifique-se de que é um Excel ou CSV válido.");
+        console.error("Erro no processamento:", error);
+        alert("Erro ao ler o arquivo. Certifique-se de que é um formato válido.");
     }
 
     setIsLoading(false);
     event.target.value = '';
   };
 
-  // --- STATS ATENDIMENTOS ---
+  // --- STATS ATENDIMENTOS COM O FILTRO CORRIGIDO ---
   const unitData = useMemo(() => {
     return rawData
       .filter(item => String(item.unitCode || "").trim() === activeUnit)
       .map(item => {
         const newItem = { ...item };
         const codProc = String(item.procCode || "").trim();
-        const nomeProc = (item.procName || "").toUpperCase();
+        const nomeProc = (item.procName || "PROCEDIMENTO NÃO INFORMADO").toUpperCase();
+        
         if (activeUnit === '104') {
-          if (HOSPITAL_PROCEDURE_MAP[codProc]) { newItem.display_procedure = HOSPITAL_PROCEDURE_MAP[codProc]; newItem.isValid = true; } 
-          else newItem.isValid = false;
+          // AQUI ESTÁ A CORREÇÃO: Ele aceita TUDO agora.
+          // Se estiver no mapa, usa o nome do mapa (Primeiro Atend/Obs). Se não, usa o nome real.
+          newItem.display_procedure = HOSPITAL_PROCEDURE_MAP[codProc] || item.procName || "Outros Procedimentos";
+          newItem.isValid = true; 
         } else {
           if (nomeProc.includes("ELETROCARDIOGRAMA")) newItem.isValid = false;
           else { newItem.display_procedure = item.procName || "Sem Nome"; newItem.isValid = true; }
@@ -224,7 +223,7 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const total = filteredData.length;
-    let totalEvolucoes = 0; // Contabilizador de evoluções
+    let totalEvolucoes = 0; 
     
     const byMonthObj = {}; const bySpecObj = {}; const byProfObj = {}; const byCityObj = {}; const byAgeObj = {};
     const byWeekDayObj = {}; const byHourObj = {};
@@ -235,7 +234,7 @@ export default function Dashboard() {
     for (let h = 0; h < 24; h++) byHourObj[h] = 0;
 
     filteredData.forEach(item => {
-      if (item.hasEvolucao) totalEvolucoes++; // Contando as evoluções
+      if (item.hasEvolucao) totalEvolucoes++; 
 
       if (item.mes_final >= 1 && item.mes_final <= 12) byMonthObj[item.mes_final] += 1;
       if (item.dateObj && !isNaN(item.dateObj)) {
@@ -300,57 +299,8 @@ export default function Dashboard() {
     return { total, totalEvolucoes, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
-  // --- LOGICA DE COMPARAÇÃO MULTI-ANO ---
-  const comparisonData = useMemo(() => {
-    if (!isComparisonMode || compYears.length === 0) return null;
-    const baseData = rawData
-        .filter(item => String(item.unitCode || "").trim() === activeUnit)
-        .map(item => {
-            const newItem = { ...item }; const codProc = String(item.procCode || "").trim(); const nomeProc = (item.procName || "").toUpperCase();
-            if (activeUnit === '104') { if (HOSPITAL_PROCEDURE_MAP[codProc]) newItem.isValid = true; else newItem.isValid = false; } 
-            else { if (nomeProc.includes("ELETROCARDIOGRAMA")) newItem.isValid = false; else newItem.isValid = true; }
-            return newItem;
-        }).filter(item => item.isValid);
-
-    const sortedYears = [...compYears].sort();
-    const totals = {};
-    sortedYears.forEach(year => totals[year] = baseData.filter(d => d.ano_final === year && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length);
-
-    let growth = 0;
-    if(sortedYears.length >= 2) {
-        const firstYear = sortedYears[0]; const lastYear = sortedYears[sortedYears.length - 1];
-        const v1 = totals[firstYear]; const v2 = totals[lastYear];
-        growth = v1 > 0 ? ((v2 - v1) / v1) * 100 : 0;
-    }
-
-    const monthlyComp = [];
-    for(let i=1; i<=12; i++) {
-        if (selectedMonths.length > 0 && !selectedMonths.includes(String(i))) continue;
-        const row = { name: MONTH_NAMES[i-1] };
-        sortedYears.forEach(year => row[year] = baseData.filter(d => d.ano_final === year && d.mes_final === i).length);
-        monthlyComp.push(row);
-    }
-
-    const specTotals = {};
-    baseData.forEach(d => {
-        if(sortedYears.includes(d.ano_final) && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))) {
-            const s = d.spec || "N/I"; specTotals[s] = (specTotals[s] || 0) + 1;
-        }
-    });
-    const topSpecs = Object.keys(specTotals).sort((a,b) => specTotals[b] - specTotals[a]).slice(0, 10);
-
-    const specComp = topSpecs.map(spec => {
-        const row = { name: spec };
-        sortedYears.forEach(year => row[year] = baseData.filter(d => d.ano_final === year && d.spec === spec && (selectedMonths.length === 0 || selectedMonths.includes(String(d.mes_final)))).length);
-        return row;
-    });
-
-    return { totals, growth, monthlyComp, specComp, sortedYears };
-  }, [isComparisonMode, compYears, activeUnit, rawData, selectedMonths]);
-
-  // --- LOGICA DEMANDA REPRIMIDA ---
+  // --- LOGICA DEMANDA (MANTIDA) ---
   const isSpecializedSelected = useMemo(() => demandFilters.services.some(s => s && s.toLowerCase().includes("especializada")), [demandFilters.services]);
-
   const demandOptions = useMemo(() => {
      const services = new Set(); const procedures = new Set(); const years = new Set();
      demandData.forEach(d => { if (d.service) services.add(d.service); if (d.procedure) procedures.add(d.procedure); if (d.ano) years.add(d.ano); });
@@ -398,13 +348,6 @@ export default function Dashboard() {
       return { total, avgWait, mainChart, unitChart, procedureTable };
   }, [filteredDemand, isSpecializedSelected]);
 
-  const handleSpecChartClick = (data) => {
-    if (data && data.name) {
-      if (selectedSpecs.length === 1 && selectedSpecs.includes(data.name)) setSelectedSpecs([]); 
-      else setSelectedSpecs([data.name]); 
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800">
       <div id="dashboard-content" className="max-w-7xl mx-auto bg-slate-50 p-2 md:p-4 rounded-xl">
@@ -425,15 +368,9 @@ export default function Dashboard() {
                 <Printer size={18}/> Salvar PDF
             </button>
             
-            {activeTab === 'atendimentos' && (
-                <button onClick={() => setIsComparisonMode(!isComparisonMode)} className={`flex items-center gap-2 px-4 py-2 rounded-md font-bold transition-all shadow-sm ${isComparisonMode ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}`}>
-                    {isComparisonMode ? <LayoutDashboard size={18}/> : <ArrowRightLeft size={18}/>} {isComparisonMode ? 'Voltar' : 'Comparar'}
-                </button>
-            )}
-
             {!isDemoData && (
                 <button onClick={handleClearData} title="Limpar todos os dados" className="flex items-center gap-2 px-3 py-2 rounded-md font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-all shadow-sm border border-red-200">
-                    <Trash2 size={18}/> Limpar Dados
+                    <Trash2 size={18}/> Limpar
                 </button>
             )}
 
@@ -450,144 +387,14 @@ export default function Dashboard() {
         {/* TABS DE NAVEGAÇÃO */}
         <div className="flex gap-1 mb-6 border-b border-slate-200" data-html2canvas-ignore="true">
             <button onClick={() => setActiveTab('atendimentos')} className={`px-6 py-3 font-bold text-sm rounded-t-lg border-t border-l border-r transition-all ${activeTab === 'atendimentos' ? 'bg-white text-blue-600 border-slate-200 -mb-px shadow-sm' : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200'}`}>Atendimentos</button>
-            <button onClick={() => setActiveTab('demanda')} className={`px-6 py-3 font-bold text-sm rounded-t-lg border-t border-l border-r transition-all ${activeTab === 'demanda' ? 'bg-white text-blue-600 border-slate-200 -mb-px shadow-sm' : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200'}`}>Análise de Demanda Reprimida</button>
+            <button onClick={() => setActiveTab('demanda')} className={`px-6 py-3 font-bold text-sm rounded-t-lg border-t border-l border-r transition-all ${activeTab === 'demanda' ? 'bg-white text-blue-600 border-slate-200 -mb-px shadow-sm' : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200'}`}>Demanda Reprimida</button>
         </div>
 
-        {/* --- CONTEÚDO: DEMANDA REPRIMIDA --- */}
-        {activeTab === 'demanda' && (
-            <div className="animate-in fade-in duration-500">
-                {/* FILTROS DEMANDA */}
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col gap-4 print:hidden">
-                    <div className="flex flex-wrap gap-4">
-                        <div className="w-full md:w-32">
-                             <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase">Ano Solic.</label>
-                             <select value={demandFilters.year} onChange={e => setDemandFilters({...demandFilters, year: e.target.value})} className="w-full bg-white border border-slate-300 rounded-md px-3 py-2 text-sm">
-                                 <option value="all">Todos</option>
-                                 {demandOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}
-                             </select>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                             <MultiSelect label="Meses" options={demandOptions.months} selectedValues={demandFilters.months} onChange={(v) => setDemandFilters({...demandFilters, months: v})} />
-                        </div>
-                        <MultiSelect label="Serviços" options={demandOptions.services} selectedValues={demandFilters.services} onChange={(v) => setDemandFilters({...demandFilters, services: v})} />
-                        <MultiSelect label="Procedimentos" options={demandOptions.procedures} selectedValues={demandFilters.procedures} onChange={(v) => setDemandFilters({...demandFilters, procedures: v})} />
-                        
-                        <div className="flex items-end pb-1">
-                            <button onClick={() => setDemandFilters({ services: [], procedures: [], year: 'all', months: [] })} className="text-sm text-red-500 font-medium flex items-center gap-1 hover:bg-red-50 px-3 py-2 rounded">
-                                <X size={16} /> Limpar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {demandData.length === 0 ? (
-                    <div className="p-12 text-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
-                        <FileSpreadsheet size={48} className="mx-auto text-slate-300 mb-4"/>
-                        <p className="text-slate-500 font-medium">Nenhum dado de demanda carregado.</p>
-                        <p className="text-sm text-slate-400">Faça upload de uma planilha do tipo "Demanda Reprimida" para visualizar.</p>
-                    </div>
-                ) : (
-                    <>
-                    {/* KPIS DEMANDA */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        <Card className="p-6 border-l-4 border-l-orange-500">
-                             <div className="flex justify-between items-start">
-                                 <div><p className="text-xs font-bold text-slate-400 uppercase">Fila Total</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{demandStats.total.toLocaleString()}</h3></div>
-                                 <div className="p-3 bg-orange-50 rounded-full text-orange-600"><List size={24} /></div>
-                             </div>
-                             <p className="text-xs text-slate-400 mt-2">Procedimentos aguardando</p>
-                        </Card>
-                        <Card className="p-6 border-l-4 border-l-red-500">
-                             <div className="flex justify-between items-start">
-                                 <div><p className="text-xs font-bold text-slate-400 uppercase">Tempo Médio Espera</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{demandStats.avgWait} <span className="text-base font-normal text-slate-500">dias</span></h3></div>
-                                 <div className="p-3 bg-red-50 rounded-full text-red-600"><Clock size={24} /></div>
-                             </div>
-                             <p className="text-xs text-slate-400 mt-2">Desde a solicitação até hoje</p>
-                        </Card>
-                        <Card className="p-6 border-l-4 border-l-blue-500">
-                             <div className="flex justify-between items-start">
-                                 <div><p className="text-xs font-bold text-slate-400 uppercase">{isSpecializedSelected ? "Maior CBO Demanda" : "Maior Serviço"}</p><h3 className="text-lg font-bold text-slate-800 mt-2 truncate w-48" title={demandStats.mainChart?.[0]?.name}>{demandStats.mainChart?.[0]?.name || '-'}</h3></div>
-                                 <div className="p-3 bg-blue-50 rounded-full text-blue-600"><Activity size={24} /></div>
-                             </div>
-                             <p className="text-sm text-blue-600 font-medium">{demandStats.mainChart?.[0]?.value || 0} solicitações</p>
-                        </Card>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                        <Card className="p-6">
-                             <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><List size={20} className="text-orange-500" /> {isSpecializedSelected ? "Demanda por CBO Executante" : "Demanda por Serviço"}</h3><ExportWidget targetId="chart-servico" fileName="demanda_por_servico" /></div>
-                             <div id="chart-servico" className="h-80 w-full bg-white p-2">
-                                 <ResponsiveContainer width="100%" height="100%">
-                                     <BarChart layout="vertical" data={(demandStats.mainChart || []).slice(0, 15)} margin={{top:5, right:30, left:80, bottom:5}}>
-                                         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                                         <XAxis type="number" hide />
-                                         <YAxis dataKey="name" type="category" width={180} tick={{fontSize:11}} interval={0} />
-                                         <RechartsTooltip cursor={{fill:'#f8fafc'}} />
-                                         <Bar dataKey="value" fill="#f97316" radius={[0,4,4,0]} name="Solicitações">
-                                             {(demandStats.mainChart || []).slice(0,15).map((e,i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                         </Bar>
-                                     </BarChart>
-                                 </ResponsiveContainer>
-                             </div>
-                        </Card>
-
-                        <Card className="p-6">
-                             <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-blue-500" /> Solicitações por Unidade de Referência</h3><ExportWidget targetId="chart-unidade-ref" fileName="demanda_por_unidade" dataForExcel={demandStats.unitChart} /></div>
-                             <div className="overflow-x-auto">
-                                <div id="chart-unidade-ref" className="max-h-80 overflow-y-auto bg-white px-2">
-                                   <table className="w-full text-sm text-left text-slate-600">
-                                       <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
-                                            <tr><th className="px-4 py-3 font-bold border-b">Unidade</th><th className="px-4 py-3 font-bold border-b text-right">Solicitações</th></tr>
-                                       </thead>
-                                       <tbody className="divide-y divide-slate-100">
-                                            {demandStats.unitChart.map((unit, index) => (
-                                                <tr key={index} className="hover:bg-slate-50">
-                                                    <td className="px-4 py-2 font-medium">{unit.name}</td>
-                                                    <td className="px-4 py-2 text-right">{unit.value.toLocaleString()}</td>
-                                                </tr>
-                                            ))}
-                                       </tbody>
-                                   </table>
-                                </div>
-                             </div>
-                        </Card>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-6 mb-6">
-                        <Card className="p-0 border-t-4 border-t-purple-500 overflow-hidden">
-                            <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><List size={20} className="text-slate-400" /> Procedimentos na Fila</h3></div><ExportWidget targetId="table-procs-demanda" fileName="tabela_procedimentos_demanda" dataForExcel={demandStats.procedureTable} /></div>
-                            <div className="overflow-x-auto"><div id="table-procs-demanda" className="max-h-96 overflow-y-auto bg-white">
-                                <table className="w-full text-sm text-left text-slate-600">
-                                    <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
-                                        <tr>
-                                            <th className="px-6 py-3 font-bold border-b border-slate-200">Código</th>
-                                            <th className="px-6 py-3 font-bold border-b border-slate-200">Procedimento</th>
-                                            {isSpecializedSelected && <th className="px-6 py-3 font-bold border-b border-slate-200">CBO Executante</th>}
-                                            <th className="px-6 py-3 font-bold border-b border-slate-200 text-right">Qtd.</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {demandStats.procedureTable.map((proc, index) => (
-                                            <tr key={index} className="bg-white hover:bg-slate-50 transition-colors">
-                                                <td className="px-6 py-3 text-slate-500 font-mono text-xs">{proc.code}</td>
-                                                <td className="px-6 py-3 font-medium text-slate-900">{proc.name}</td>
-                                                {isSpecializedSelected && <td className="px-6 py-3 text-slate-600 text-xs">{proc.cbo}</td>}
-                                                <td className="px-6 py-3 text-right font-bold text-slate-700">{proc.count.toLocaleString()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div></div>
-                        </Card>
-                    </div>
-                    </>
-                )}
-            </div>
-        )}
-
-        {/* --- VIEW: ATENDIMENTOS --- */}
+        {/* --- CONTEÚDO: ATENDIMENTOS --- */}
         {activeTab === 'atendimentos' && (
            <div className="animate-in fade-in duration-500">
+           
+           {/* FILTROS */}
            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-col gap-4 print:hidden" data-html2canvas-ignore="true">
              <div className="flex flex-wrap gap-2 pb-4 border-b border-slate-100">
                {availableUnits.map((unit) => (
@@ -598,21 +405,7 @@ export default function Dashboard() {
              </div>
 
              <div className="flex flex-col md:flex-row gap-4 flex-wrap">
-                 {isComparisonMode ? (
-                    <div className="flex gap-2 items-center bg-indigo-50 p-2 rounded border border-indigo-100">
-                        <span className="text-xs font-bold text-indigo-700 uppercase">Anos:</span>
-                        <div className="w-64">
-                            <MultiSelect 
-                                label="" options={filterOptions.years} selectedValues={compYears} 
-                                onChange={(vals) => { if(vals.length <= 4) setCompYears(vals); else alert("Máximo de 4 anos para comparação."); }}
-                                placeholder="Selecione anos..."
-                            />
-                        </div>
-                    </div>
-                 ) : (
-                    <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select></div></div>
-                 )}
-
+                 <div className="w-full md:w-32"><label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Ano</label><div className="relative"><select className="w-full appearance-none bg-white border border-slate-300 hover:border-blue-400 px-3 py-2 rounded-md text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}><option value="all">Todos</option>{filterOptions.years.map(y => <option key={y.value} value={y.value}>{y.label}</option>)}</select></div></div>
                  <div className="flex flex-col gap-1">
                     <div className="flex gap-1">
                         {Object.entries(PERIOD_PRESETS).map(([label, months]) => (
@@ -621,294 +414,181 @@ export default function Dashboard() {
                     </div>
                     <MultiSelect label="Meses / Período" options={filterOptions.months} selectedValues={selectedMonths} onChange={setSelectedMonths} placeholder="Todos os meses" />
                  </div>
-
                  <MultiSelect label="Especialidades" options={filterOptions.specs} selectedValues={selectedSpecs} onChange={setSelectedSpecs} />
-                 
-                 {!isComparisonMode && (
-                   <>
-                       <MultiSelect label="Profissionais" options={filterOptions.profs} selectedValues={selectedProfs} onChange={setSelectedProfs} />
-                       <MultiSelect label="Procedimentos" options={filterOptions.procs} selectedValues={selectedProcs} onChange={setSelectedProcs} />
-                   </>
-                 )}
-
+                 <MultiSelect label="Profissionais" options={filterOptions.profs} selectedValues={selectedProfs} onChange={setSelectedProfs} />
+                 <MultiSelect label="Procedimentos" options={filterOptions.procs} selectedValues={selectedProcs} onChange={setSelectedProcs} />
                  <div className="flex flex-col">
-                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase">Intervalo de Datas</label>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase">Datas</label>
                     <div className="flex gap-2">
                         <input type="date" className="border border-slate-300 rounded px-2 py-1 text-sm" onChange={(e) => setDateRange({...dateRange, start: e.target.value})} />
                         <span className="text-slate-400">-</span>
                         <input type="date" className="border border-slate-300 rounded px-2 py-1 text-sm" onChange={(e) => setDateRange({...dateRange, end: e.target.value})} />
                     </div>
                  </div>
-
                  <div className="flex items-end pb-1">
                     <button onClick={() => { setSelectedYear('all'); setSelectedMonths([]); setSelectedSpecs([]); setSelectedProcs([]); setSelectedProfs([]); setDateRange({start:'', end:''}); }} className="text-sm text-red-500 hover:text-red-700 font-medium flex items-center gap-1 px-3 py-2 rounded hover:bg-red-50 transition-colors"><X size={16} /> Limpar</button>
                  </div>
              </div>
            </div>
 
-           {/* --- VIEW: COMPARAÇÃO MULTI-ANO --- */}
-           {isComparisonMode && comparisonData ? (
-               <div className="animate-in fade-in duration-500">
-                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                       {comparisonData.sortedYears.map(year => (
-                           <Card key={year} className="p-6 flex flex-col justify-center items-center text-center">
-                               <p className="text-sm font-bold text-slate-400 uppercase">Volume {year}</p>
-                               <h3 className="text-3xl font-bold text-slate-700">{comparisonData.totals[year].toLocaleString()}</h3>
-                           </Card>
-                       ))}
-                       {comparisonData.sortedYears.length >= 2 && (
-                           <Card className={`p-6 flex flex-col justify-center items-center text-center border-l-4 ${comparisonData.growth >= 0 ? 'border-green-500 bg-green-50' : 'border-red-500 bg-red-50'}`}>
-                               <p className="text-sm font-bold text-slate-500 uppercase">Crescimento Total</p>
-                               <h3 className={`text-3xl font-bold ${comparisonData.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                   {comparisonData.growth >= 0 ? '+' : ''}{comparisonData.growth.toFixed(1)}%
-                               </h3>
-                               <p className="text-xs text-slate-500 mt-1">
-                                   {comparisonData.sortedYears[0]} ➔ {comparisonData.sortedYears[comparisonData.sortedYears.length-1]}
-                               </p>
-                           </Card>
-                       )}
+           <div className="mb-6 p-3 border border-slate-200 rounded text-sm bg-blue-50/50 flex flex-wrap gap-4 print:hidden">
+               <span className="font-bold text-slate-700">Filtros Aplicados:</span>
+               <span>Ano: <strong>{selectedYear === 'all' ? 'Todos' : selectedYear}</strong></span>
+               <span>Período: <strong>{selectedMonths.length === 0 ? 'Todos' : selectedMonths.length === 12 ? 'Ano Completo' : `${selectedMonths.length} meses selecionados`}</strong></span>
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+               <Card className="p-6 border-l-4 border-l-blue-500">
+                   <div className="flex justify-between items-start">
+                       <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Volume Total</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.total.toLocaleString()}</h3></div>
+                       <div className="p-3 bg-blue-50 rounded-full text-blue-600"><FileText size={24} /></div>
                    </div>
-
-                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                       <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-indigo-500" /> Comparativo Mensal</h3><ExportWidget targetId="comp-mensal" fileName={`comparativo_mensal_multi`} /></div>
-                           <div id="comp-mensal" className="h-80 w-full bg-white p-2">
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <LineChart data={comparisonData.monthlyComp} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
-                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                       <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
-                                       <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} />
-                                       <RechartsTooltip contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                       <Legend />
-                                       {comparisonData.sortedYears.map((year, index) => <Line key={year} type="monotone" dataKey={year} stroke={YEAR_COLORS[index % YEAR_COLORS.length]} strokeWidth={3} dot={{r:4}} />)}
-                                   </LineChart>
-                               </ResponsiveContainer>
-                           </div>
-                       </Card>
-                       <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-indigo-500" /> Comparativo por Especialidade</h3><ExportWidget targetId="comp-diff" fileName={`comparativo_especialidade_multi`} /></div>
-                           <div id="comp-diff" className="h-80 w-full bg-white p-2">
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <BarChart layout="vertical" data={comparisonData.specComp} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}>
-                                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                                       <XAxis type="number" hide />
-                                       <YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} />
-                                       <RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{backgroundColor:'#fff', borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                       <Legend />
-                                       {comparisonData.sortedYears.map((year, index) => <Bar key={year} dataKey={year} fill={YEAR_COLORS[index % YEAR_COLORS.length]} radius={[0, 4, 4, 0]} barSize={10} />)}
-                                   </BarChart>
-                               </ResponsiveContainer>
-                           </div>
-                       </Card>
-                   </div>
-               </div>
-           ) : (
-               <div className="animate-in fade-in duration-500">
-                   <div className="mb-6 p-3 border border-slate-200 rounded text-sm bg-blue-50/50 flex flex-wrap gap-4 print:hidden">
-                       <span className="font-bold text-slate-700">Filtros Aplicados:</span>
-                       <span>Ano: <strong>{selectedYear === 'all' ? 'Todos' : selectedYear}</strong></span>
-                       <span>Período: <strong>{selectedMonths.length === 0 ? 'Todos' : selectedMonths.length === 12 ? 'Ano Completo' : `${selectedMonths.length} meses selecionados`}</strong></span>
-                   </div>
-
-                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                       <Card className="p-6 border-l-4 border-l-blue-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Volume Total</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.total.toLocaleString()}</h3></div><div className="p-3 bg-blue-50 rounded-full text-blue-600"><FileText size={24} /></div></div>{activeUnit === '104' ? stats.total > 0 && <p className="text-xs text-slate-400 mt-2">Filtrado por: 1º Atendimento e Obs.</p> : <p className="text-xs text-slate-400 mt-2">Excluindo Eletrocardiograma</p>}</Card>
-                       
-                       {/* NOVO CARD: EVOLUÇÕES PARA UNIDADE 104 */}
-                       {activeUnit === '104' && (
-                           <Card className="p-6 border-l-4 border-l-emerald-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total de Evoluções</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalEvolucoes.toLocaleString()}</h3></div><div className="p-3 bg-emerald-50 rounded-full text-emerald-600"><ClipboardPlus size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Registradas no período</p></Card>
-                       )}
-
-                       <Card className="p-6 border-l-4 border-l-green-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Especialidade</p><h3 className="text-xl font-bold text-slate-800 mt-2 truncate w-32" title={stats.bySpec[0]?.name}>{stats.bySpec[0]?.name || '-'}</h3><p className="text-sm text-green-600 font-medium">{stats.bySpec[0]?.value ? `${stats.bySpec[0].value.toLocaleString()} atends.` : 'N/A'}</p></div><div className="p-3 bg-green-50 rounded-full text-green-600"><Stethoscope size={24} /></div></div></Card>
-                       <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pico Mensal</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {name: '-'}).name}</h3><p className="text-sm text-purple-600 font-medium">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {value: 0}).value.toLocaleString()} atends.</p></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><Calendar size={24} /></div></div></Card>
-                   </div>
-
-                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                       <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Evolução Mensal</h3><ExportWidget targetId="chart-evolucao" fileName="evolucao_mensal" /></div>
-                           <div id="chart-evolucao" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><LineChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="value" name="Atendimentos" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4, fill: '#0ea5e9', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer></div>
-                       </Card>
-                       <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
-                           <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                           <Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]} onClick={handleSpecChartClick} cursor="pointer">
-                               {stats.bySpec.slice(0, 10).map((entry, index) => <Cell key={`cell-${index}`} fill={getSpecColor(entry.name)} />)}
-                           </Bar>
-                           </BarChart></ResponsiveContainer></div>
-                       </Card>
-                   </div>
-
-                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                       <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Movimento por Dia da Semana</h3><ExportWidget targetId="chart-weekday" fileName="dias_semana" /></div>
-                           <div id="chart-weekday" className="h-64 w-full bg-white p-2">
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <BarChart data={stats.byWeekDay} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
-                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                       <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
-                                       <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
-                                       <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
-                                       <Bar dataKey="value" name="Atendimentos" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                                   </BarChart>
-                               </ResponsiveContainer>
-                           </div>
-                       </Card>
-                       <Card className="p-6">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Watch size={20} className="text-slate-400" /> Horários de Pico</h3><ExportWidget targetId="chart-hours" fileName="horarios_pico" /></div>
-                           <div id="chart-hours" className="h-64 w-full bg-white p-2">
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <AreaChart data={stats.byHour} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
-                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                       <XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} interval={2} />
-                                       <YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} />
-                                       <RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} />
-                                       <Area type="monotone" dataKey="value" name="Atendimentos" stroke="#f59e0b" fill="#fef3c7" strokeWidth={2} />
-                                   </AreaChart>
-                               </ResponsiveContainer>
-                           </div>
-                       </Card>
-                   </div>
-
-                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                       <Card className="p-6 lg:col-span-1">
-                           <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Faixa Etária</h3><ExportWidget targetId="chart-age" fileName="faixa_etaria" /></div>
-                           <div id="chart-age" className="h-64 w-full bg-white p-2">
-                               <ResponsiveContainer width="100%" height="100%">
-                                   <PieChart>
-                                       <Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} fill="#8884d8" label={false}>
-                                           {stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                                       </Pie>
-                                       <RechartsTooltip formatter={(value, name, props) => [`${value} (${(props.payload.percent * 100).toFixed(0)}%)`, name]} />
-                                       <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
-                                   </PieChart>
-                               </ResponsiveContainer>
-                           </div>
-                       </Card>
-                       <Card className="p-0 border-t-4 border-t-blue-400 lg:col-span-2 overflow-hidden">
-                           <div className="p-6 pb-4 bg-white flex justify-between items-center">
-                               <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3></div>
-                               <ExportWidget targetId="table-city" fileName="tabela_cidades" dataForExcel={stats.byCity} />
-                           </div>
-                           <div className="overflow-x-auto">
-                               <div id="table-city" className="max-h-64 overflow-y-auto bg-white px-4 pb-4">
-                                   <table className="w-full text-sm text-left text-slate-600">
-                                       <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
-                                           <tr><th className="px-4 py-3 font-bold border-b">Cidade</th><th className="px-4 py-3 font-bold border-b text-right">Pacientes</th><th className="px-4 py-3 font-bold border-b text-right">%</th></tr>
-                                       </thead>
-                                       <tbody className="divide-y divide-slate-100">
-                                           {stats.byCity.map((city, index) => (
-                                               <tr key={index} className="hover:bg-slate-50">
-                                                   <td className="px-4 py-2 font-medium truncate max-w-xs" title={city.name}>{city.name}</td>
-                                                   <td className="px-4 py-2 text-right">{city.value.toLocaleString()}</td>
-                                                   <td className="px-4 py-2 text-right text-slate-400 text-xs">{city.percent}%</td>
-                                               </tr>
-                                           ))}
-                                       </tbody>
-                                   </table>
-                               </div>
-                           </div>
-                       </Card>
-                   </div>
-
-                   {/* --- MATRIZ DE ATENDIMENTOS --- */}
-                   {activeUnit === '104' && (
-                       <Card className="p-0 border-t-4 border-t-blue-600 mb-8 overflow-hidden">
-                           <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Matriz de Atendimentos</h3><p className="text-sm text-slate-500 mt-1">Visão detalhada por Especialidade e Mês</p></div><ExportWidget targetId="table-matriz" fileName="matriz_hospital" dataForExcel={stats.hospitalMatrixData} /></div>
-                           <div className="overflow-x-auto">
-                               <div id="table-matriz" className="max-h-96 overflow-y-auto bg-white">
-                                   <table className="w-full text-xs text-left text-slate-600 border-collapse">
-                                       <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
-                                           <tr>
-                                               <th className="px-4 py-3 font-bold border-b border-slate-200 text-left">Especialidade</th>
-                                               {MONTH_NAMES.map(m => <th key={m} className="px-2 py-3 font-bold border-b border-slate-200 text-center">{m}</th>)}
-                                               <th className="px-4 py-3 font-bold border-b border-slate-200 text-right bg-slate-200">Total</th>
-                                           </tr>
-                                       </thead>
-                                       <tbody className="divide-y divide-slate-100">
-                                           {stats.hospitalMatrixData.map((row, idx) => (
-                                               <tr key={idx} className="bg-white hover:bg-slate-50 transition-colors">
-                                                   <td className="px-4 py-2 font-medium text-slate-900 border-r border-slate-100 text-left">{row.spec}</td>
-                                                   {MONTH_NAMES.map((_, i) => (
-                                                       <td key={i} className="px-2 py-2 text-center border-r border-slate-100">
-                                                           <div className="flex flex-col items-center justify-center">
-                                                               <span className={row[i+1].total > 0 ? "font-bold text-slate-700" : "text-slate-300"}>{row[i+1].total}</span>
-                                                               {row[i+1].obs > 0 && <span className="text-[10px] text-amber-600">({row[i+1].obs} obs)</span>}
-                                                           </div>
-                                                       </td>
-                                                   ))}
-                                                   <td className="px-4 py-2 text-right font-bold text-slate-900 bg-slate-50">{row.totalGeral}</td>
-                                               </tr>
-                                           ))}
-                                       </tbody>
-                                   </table>
-                               </div>
-                           </div>
-                       </Card>
-                   )}
-
-                   {/* --- TABELA DE PRODUTIVIDADE --- */}
-                   <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
-                       <div className="p-6 pb-4 bg-white flex justify-between items-center">
-                           <div>
-                               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3>
-                               <p className="text-sm text-slate-500 mt-1">Detalhamento por turno</p>
-                           </div>
-                           <ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} />
-                       </div>
-                       <div className="overflow-x-auto">
-                           <div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white">
-                               <table className="w-full text-sm text-left text-slate-600 border-collapse">
-                                   <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
-                                       <tr>
-                                           <th rowSpan="2" className="px-6 py-3 font-bold border-b border-r border-slate-200 align-middle text-left">Profissional</th>
-                                           <th rowSpan="2" className="px-4 py-3 font-bold border-b border-r border-slate-200 text-center align-middle">Dias</th>
-                                           <th rowSpan="2" className="px-4 py-3 font-bold border-b border-r border-slate-200 text-center align-middle">Média/Dia</th>
-                                           
-                                           {activeUnit === '104' && (
-                                               <>
-                                                   <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-sky-50 text-sky-800">
-                                                       <div className="flex items-center justify-center gap-1"><Sun size={14}/> Diurno</div>
-                                                   </th>
-                                                   <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-indigo-50 text-indigo-800">
-                                                       <div className="flex items-center justify-center gap-1"><Moon size={14}/> Noturno</div>
-                                                   </th>
-                                               </>
-                                           )}
-                                           
-                                           <th rowSpan="2" className="px-6 py-3 font-bold border-b border-slate-200 text-right align-middle bg-slate-200">Total</th>
-                                       </tr>
-                                       {activeUnit === '104' && (
-                                           <tr>
-                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">1º Atend.</th>
-                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">Obs.</th>
-                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">1º Atend.</th>
-                                               <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">Obs.</th>
-                                           </tr>
-                                       )}
-                                   </thead>
-                                   <tbody className="divide-y divide-slate-100">
-                                       {stats.allProfs.map((prof, index) => (
-                                           <tr key={index} className="bg-white hover:bg-slate-50 transition-colors">
-                                               <td className="px-6 py-3 font-medium text-slate-900 border-r border-slate-100 text-left">{prof.name}</td>
-                                               <td className="px-4 py-3 text-center border-r border-slate-100"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td>
-                                               <td className="px-4 py-3 text-center text-slate-500 border-r border-slate-100">{prof.avgPerDay.toLocaleString()}</td>
-                                               {activeUnit === '104' && (
-                                                   <>
-                                                       <td className="px-4 py-3 text-right font-medium text-sky-700 bg-sky-50/20 border-r border-sky-100">{prof.diurno_atend > 0 ? prof.diurno_atend : '-'}</td>
-                                                       <td className="px-4 py-3 text-right font-medium text-amber-600 bg-sky-50/20 border-r border-slate-200">{prof.diurno_obs > 0 ? prof.diurno_obs : '-'}</td>
-                                                       <td className="px-4 py-3 text-right font-medium text-indigo-700 bg-indigo-50/20 border-r border-indigo-100">{prof.noturno_atend > 0 ? prof.noturno_atend : '-'}</td>
-                                                       <td className="px-4 py-3 text-right font-medium text-amber-600 bg-indigo-50/20 border-r border-slate-200">{prof.noturno_obs > 0 ? prof.noturno_obs : '-'}</td>
-                                                   </>
-                                               )}
-                                               <td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td>
-                                           </tr>
-                                       ))}
-                                   </tbody>
-                               </table>
-                           </div>
+               </Card>
+               
+               {activeUnit === '104' && (
+                   <Card className="p-6 border-l-4 border-l-emerald-500">
+                       <div className="flex justify-between items-start">
+                           <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Evoluções Registradas</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalEvolucoes.toLocaleString()}</h3></div>
+                           <div className="p-3 bg-emerald-50 rounded-full text-emerald-600"><ClipboardPlus size={24} /></div>
                        </div>
                    </Card>
+               )}
+
+               <Card className="p-6 border-l-4 border-l-green-500">
+                   <div className="flex justify-between items-start">
+                       <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Especialidade</p><h3 className="text-xl font-bold text-slate-800 mt-2 truncate w-32" title={stats.bySpec[0]?.name}>{stats.bySpec[0]?.name || '-'}</h3><p className="text-sm text-green-600 font-medium">{stats.bySpec[0]?.value ? `${stats.bySpec[0].value.toLocaleString()} atends.` : 'N/A'}</p></div>
+                       <div className="p-3 bg-green-50 rounded-full text-green-600"><Stethoscope size={24} /></div>
+                   </div>
+               </Card>
+
+               <Card className="p-6 border-l-4 border-l-purple-500">
+                   <div className="flex justify-between items-start">
+                       <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pico Mensal</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {name: '-'}).name}</h3><p className="text-sm text-purple-600 font-medium">{stats.byMonth.reduce((a, b) => (a.value > b.value ? a : b), {value: 0}).value.toLocaleString()} atends.</p></div>
+                       <div className="p-3 bg-purple-50 rounded-full text-purple-600"><Calendar size={24} /></div>
+                   </div>
+               </Card>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+               <Card className="p-6">
+                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Evolução Mensal</h3><ExportWidget targetId="chart-evolucao" fileName="evolucao_mensal" /></div>
+                   <div id="chart-evolucao" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><LineChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Line type="monotone" dataKey="value" name="Atendimentos" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4, fill: '#0ea5e9', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer></div>
+               </Card>
+               <Card className="p-6">
+                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Stethoscope size={20} className="text-slate-400" /> Volume por Especialidade</h3><ExportWidget targetId="chart-specs" fileName="volume_especialidade" /></div>
+                   <div id="chart-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.bySpec.slice(0, 10)} margin={{ top: 5, right: 30, left: 60, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fill: '#475569', fontSize: 11, fontWeight: 500}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} /><Bar dataKey="value" name="Atendimentos" radius={[0, 4, 4, 0]}>{stats.bySpec.slice(0, 10).map((entry, index) => <Cell key={`cell-${index}`} fill={getSpecColor(entry.name)} />)}</Bar></BarChart></ResponsiveContainer></div>
+               </Card>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+               <Card className="p-6">
+                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-slate-400" /> Dia da Semana</h3><ExportWidget targetId="chart-weekday" fileName="dias_semana" /></div>
+                   <div id="chart-weekday" className="h-64 w-full bg-white p-2">
+                       <ResponsiveContainer width="100%" height="100%"><BarChart data={stats.byWeekDay} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} /><Bar dataKey="value" name="Atendimentos" fill="#8b5cf6" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
+                   </div>
+               </Card>
+               <Card className="p-6">
+                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Watch size={20} className="text-slate-400" /> Horários</h3><ExportWidget targetId="chart-hours" fileName="horarios_pico" /></div>
+                   <div id="chart-hours" className="h-64 w-full bg-white p-2">
+                       <ResponsiveContainer width="100%" height="100%"><AreaChart data={stats.byHour} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="name" stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} interval={2} /><YAxis stroke="#64748b" tick={{fill: '#64748b', fontSize: 11}} /><RechartsTooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px' }} /><Area type="monotone" dataKey="value" name="Atendimentos" stroke="#f59e0b" fill="#fef3c7" strokeWidth={2} /></AreaChart></ResponsiveContainer>
+                   </div>
+               </Card>
+           </div>
+
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+               <Card className="p-6 lg:col-span-1">
+                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Faixa Etária</h3><ExportWidget targetId="chart-age" fileName="faixa_etaria" /></div>
+                   <div id="chart-age" className="h-64 w-full bg-white p-2">
+                       <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={stats.byAge} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} fill="#8884d8" label={false}>{stats.byAge.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip formatter={(value, name, props) => [`${value} (${(props.payload.percent * 100).toFixed(0)}%)`, name]} /><Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/></PieChart></ResponsiveContainer>
+                   </div>
+               </Card>
+               <Card className="p-0 border-t-4 border-t-blue-400 lg:col-span-2 overflow-hidden">
+                   <div className="p-6 pb-4 bg-white flex justify-between items-center">
+                       <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Atendimentos por Cidade</h3></div>
+                       <ExportWidget targetId="table-city" fileName="tabela_cidades" dataForExcel={stats.byCity} />
+                   </div>
+                   <div className="overflow-x-auto">
+                       <div id="table-city" className="max-h-64 overflow-y-auto bg-white px-4 pb-4">
+                           <table className="w-full text-sm text-left text-slate-600">
+                               <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
+                                   <tr><th className="px-4 py-3 font-bold border-b">Cidade</th><th className="px-4 py-3 font-bold border-b text-right">Pacientes</th><th className="px-4 py-3 font-bold border-b text-right">%</th></tr>
+                               </thead>
+                               <tbody className="divide-y divide-slate-100">
+                                   {stats.byCity.map((city, index) => (
+                                       <tr key={index} className="hover:bg-slate-50">
+                                           <td className="px-4 py-2 font-medium truncate max-w-xs" title={city.name}>{city.name}</td>
+                                           <td className="px-4 py-2 text-right">{city.value.toLocaleString()}</td>
+                                           <td className="px-4 py-2 text-right text-slate-400 text-xs">{city.percent}%</td>
+                                       </tr>
+                                   ))}
+                               </tbody>
+                           </table>
+                       </div>
+                   </div>
+               </Card>
+           </div>
+
+           {/* --- TABELA DE PRODUTIVIDADE --- */}
+           <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
+               <div className="p-6 pb-4 bg-white flex justify-between items-center">
+                   <div>
+                       <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Table size={20} className="text-slate-400" /> Tabela de Produtividade</h3>
+                       <p className="text-sm text-slate-500 mt-1">Detalhamento por turno</p>
+                   </div>
+                   <ExportWidget targetId="table-produtividade" fileName="tabela_produtividade" dataForExcel={stats.allProfs} />
                </div>
-           )}
+               <div className="overflow-x-auto">
+                   <div id="table-produtividade" className="max-h-96 overflow-y-auto bg-white">
+                       <table className="w-full text-sm text-left text-slate-600 border-collapse">
+                           <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10">
+                               <tr>
+                                   <th rowSpan="2" className="px-6 py-3 font-bold border-b border-r border-slate-200 align-middle text-left">Profissional</th>
+                                   <th rowSpan="2" className="px-4 py-3 font-bold border-b border-r border-slate-200 text-center align-middle">Dias</th>
+                                   <th rowSpan="2" className="px-4 py-3 font-bold border-b border-r border-slate-200 text-center align-middle">Média/Dia</th>
+                                   
+                                   {activeUnit === '104' && (
+                                       <>
+                                           <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-sky-50 text-sky-800">
+                                               <div className="flex items-center justify-center gap-1"><Sun size={14}/> Diurno</div>
+                                           </th>
+                                           <th colSpan="2" className="px-4 py-2 font-bold border-b border-r border-slate-200 text-center bg-indigo-50 text-indigo-800">
+                                               <div className="flex items-center justify-center gap-1"><Moon size={14}/> Noturno</div>
+                                           </th>
+                                       </>
+                                   )}
+                                   <th rowSpan="2" className="px-6 py-3 font-bold border-b border-slate-200 text-right align-middle bg-slate-200">Total</th>
+                               </tr>
+                               {activeUnit === '104' && (
+                                   <tr>
+                                       <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">Atend.</th>
+                                       <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-sky-50/50 text-xs">Obs.</th>
+                                       <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">Atend.</th>
+                                       <th className="px-4 py-2 font-bold border-b border-r border-slate-200 text-right bg-indigo-50/50 text-xs">Obs.</th>
+                                   </tr>
+                               )}
+                           </thead>
+                           <tbody className="divide-y divide-slate-100">
+                               {stats.allProfs.map((prof, index) => (
+                                   <tr key={index} className="bg-white hover:bg-slate-50 transition-colors">
+                                       <td className="px-6 py-3 font-medium text-slate-900 border-r border-slate-100 text-left">{prof.name}</td>
+                                       <td className="px-4 py-3 text-center border-r border-slate-100"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded-full text-xs font-bold">{prof.daysCount}</span></td>
+                                       <td className="px-4 py-3 text-center text-slate-500 border-r border-slate-100">{prof.avgPerDay.toLocaleString()}</td>
+                                       {activeUnit === '104' && (
+                                           <>
+                                               <td className="px-4 py-3 text-right font-medium text-sky-700 bg-sky-50/20 border-r border-sky-100">{prof.diurno_atend > 0 ? prof.diurno_atend : '-'}</td>
+                                               <td className="px-4 py-3 text-right font-medium text-amber-600 bg-sky-50/20 border-r border-slate-200">{prof.diurno_obs > 0 ? prof.diurno_obs : '-'}</td>
+                                               <td className="px-4 py-3 text-right font-medium text-indigo-700 bg-indigo-50/20 border-r border-indigo-100">{prof.noturno_atend > 0 ? prof.noturno_atend : '-'}</td>
+                                               <td className="px-4 py-3 text-right font-medium text-amber-600 bg-indigo-50/20 border-r border-slate-200">{prof.noturno_obs > 0 ? prof.noturno_obs : '-'}</td>
+                                           </>
+                                       )}
+                                       <td className="px-6 py-3 text-right font-bold text-slate-800 bg-slate-50">{prof.total.toLocaleString()}</td>
+                                   </tr>
+                               ))}
+                           </tbody>
+                       </table>
+                   </div>
+               </div>
+           </Card>
 
            <footer className="mt-12 py-6 border-t border-slate-200 flex flex-col items-center gap-4 text-center">
              <div>
