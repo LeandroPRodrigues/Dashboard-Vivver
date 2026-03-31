@@ -59,7 +59,6 @@ export default function Dashboard() {
   const [isDemoData, setIsDemoData] = useState(true);
   const [isComparisonMode, setIsComparisonMode] = useState(false);
 
-  // --- STATES ATENDIMENTOS ---
   const [selectedYear, setSelectedYear] = useState('all');
   const [selectedMonths, setSelectedMonths] = useState([]);
   const [selectedSpecs, setSelectedSpecs] = useState([]);
@@ -67,10 +66,7 @@ export default function Dashboard() {
   const [selectedProfs, setSelectedProfs] = useState([]); 
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  // --- COMPARAÇÃO MULTI-ANO ---
   const [compYears, setCompYears] = useState([]);
-
-  // --- STATES DEMANDA REPRIMIDA ---
   const [demandData, setDemandData] = useState([]);
   const [demandFilters, setDemandFilters] = useState({ services: [], procedures: [], year: 'all', months: [] });
 
@@ -80,7 +76,6 @@ export default function Dashboard() {
 
   const handlePrint = () => { window.print(); };
 
-  // --- MAPPING ATENDIMENTOS ---
   const availableUnits = useMemo(() => {
     if (!rawData || rawData.length === 0) return [];
     const unitsMap = new Map();
@@ -146,14 +141,13 @@ export default function Dashboard() {
         }
     } catch (error) {
         console.error("Erro no processamento:", error);
-        alert("Erro ao ler o arquivo. Certifique-se de que é um formato válido.");
+        alert("Erro ao ler o ficheiro. Certifique-se de que é um formato válido.");
     }
 
     setIsLoading(false);
     event.target.value = '';
   };
 
-  // --- STATS ATENDIMENTOS COM O FILTRO CORRIGIDO ---
   const unitData = useMemo(() => {
     return rawData
       .filter(item => String(item.unitCode || "").trim() === activeUnit)
@@ -163,9 +157,18 @@ export default function Dashboard() {
         const nomeProc = (item.procName || "PROCEDIMENTO NÃO INFORMADO").toUpperCase();
         
         if (activeUnit === '104') {
-          // AQUI ESTÁ A CORREÇÃO: Ele aceita TUDO agora.
-          // Se estiver no mapa, usa o nome do mapa (Primeiro Atend/Obs). Se não, usa o nome real.
-          newItem.display_procedure = HOSPITAL_PROCEDURE_MAP[codProc] || item.procName || "Outros Procedimentos";
+          // CORREÇÃO AQUI: Verifica se o código múltiplo contém "Observação" ou "Primeiro Atendimento"
+          const codesArray = codProc.split('-');
+          let mappedName = null;
+          
+          if (codesArray.some(c => OBS_CODES.includes(c.trim()))) {
+              mappedName = 'Pacientes em observação';
+          } else {
+              const foundCode = codesArray.find(c => HOSPITAL_PROCEDURE_MAP[c.trim()]);
+              if (foundCode) mappedName = HOSPITAL_PROCEDURE_MAP[foundCode.trim()];
+          }
+          
+          newItem.display_procedure = mappedName || item.procName || "Outros Procedimentos";
           newItem.isValid = true; 
         } else {
           if (nomeProc.includes("ELETROCARDIOGRAMA")) newItem.isValid = false;
@@ -249,6 +252,9 @@ export default function Dashboard() {
       const city = item.city || "Não informado"; byCityObj[city] = (byCityObj[city] || 0) + 1;
       const ageGroup = item.ageGroup || "Não classificado"; byAgeObj[ageGroup] = (byAgeObj[ageGroup] || 0) + 1;
       
+      // CORREÇÃO: Descobre se o item é observação, mesmo que tenha múltiplos códigos unidos por hífen
+      const isObs = item.procCode ? String(item.procCode).split('-').some(c => OBS_CODES.includes(c.trim())) : false;
+
       if (activeUnit === '104') {
         const specName = item.spec || "Não informado";
         if (!matrixMap.has(specName)) {
@@ -261,7 +267,7 @@ export default function Dashboard() {
         if (m >= 1 && m <= 12) {
             specData.months[m].total += 1;
             specData.totalGeral += 1;
-            if (OBS_CODES.includes(String(item.procCode))) specData.months[m].obs += 1;
+            if (isObs) specData.months[m].obs += 1;
         }
       }
 
@@ -271,10 +277,11 @@ export default function Dashboard() {
       }
       if (activeUnit === '104') byProfObj[prof][item.display_procedure] = (byProfObj[prof][item.display_procedure] || 0) + 1;
       byProfObj[prof].total += 1;
+      
+      // Como a data já foi limpa no Passo 1, aqui ele só adiciona "2026-03-02" no SET de dias, contando corretamente!
       if (item.date) byProfObj[prof].days.add(item.date);
 
       const shift = getShift(item.time);
-      const isObs = OBS_CODES.includes(String(item.procCode));
       if (shift === 'Diurno') { isObs ? byProfObj[prof].diurno_obs++ : byProfObj[prof].diurno_atend++; } 
       else if (shift === 'Noturno') { isObs ? byProfObj[prof].noturno_obs++ : byProfObj[prof].noturno_atend++; }
     });
@@ -299,7 +306,6 @@ export default function Dashboard() {
     return { total, totalEvolucoes, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
-  // --- LOGICA DEMANDA (MANTIDA) ---
   const isSpecializedSelected = useMemo(() => demandFilters.services.some(s => s && s.toLowerCase().includes("especializada")), [demandFilters.services]);
   const demandOptions = useMemo(() => {
      const services = new Set(); const procedures = new Set(); const years = new Set();

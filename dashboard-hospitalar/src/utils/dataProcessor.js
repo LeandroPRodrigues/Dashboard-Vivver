@@ -31,7 +31,6 @@ export const processFiles = async (files) => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 const text = e.target.result;
-                // Verifica se tem ponto-e-vírgula e não é um binário zip (PK) ou OLE (ÐÏ)
                 if (text.includes(';') && !text.startsWith('PK') && !text.startsWith('ÐÏ')) {
                     const rowsText = text.split(/\r?\n/);
                     const rows = rowsText.filter(line => line.trim() !== "").map(line => {
@@ -39,7 +38,6 @@ export const processFiles = async (files) => {
                     });
                     resolve(rows);
                 } else {
-                    // Se for Excel real (.xlsx)
                     const readerBinary = new FileReader();
                     readerBinary.onload = (eBin) => {
                         try {
@@ -53,7 +51,7 @@ export const processFiles = async (files) => {
                     readerBinary.readAsArrayBuffer(file);
                 }
             };
-            reader.readAsText(file, 'ISO-8859-1'); // Lê acentuação corretamente
+            reader.readAsText(file, 'ISO-8859-1');
         });
     };
 
@@ -123,14 +121,9 @@ export const processFiles = async (files) => {
                     }
                 });
 
-                // =========================================================
-                // NOVA REGRA: IGNORAR ENFERMEIROS E TÉCNICOS DE ENFERMAGEM
-                // =========================================================
+                // IGNORAR ENFERMEIROS E TÉCNICOS
                 const cbo = String(baseRowObj.cboCode || '').trim();
-                if (cbo === '223505' || cbo === '322205') {
-                    return; // Pula esta linha e não contabiliza nada dela!
-                }
-                // =========================================================
+                if (cbo === '223505' || cbo === '322205') return; 
 
                 const rawDateValue = baseRowObj.date || baseRowObj.time; 
                 let parsedDate = parseExcelDate(rawDateValue);
@@ -138,22 +131,20 @@ export const processFiles = async (files) => {
                 baseRowObj.mes_final = parsedDate.mes;
                 baseRowObj.dateObj = parsedDate.dt;
                 
-                if (!baseRowObj.date && rawDateValue) baseRowObj.date = rawDateValue.split(' ')[0];
+                // CORREÇÃO: Força a data a ser SÓ a data, arrancando a hora que vem do arquivo novo
+                if (!baseRowObj.date && rawDateValue) baseRowObj.date = String(rawDateValue).split(' ')[0];
+                if (baseRowObj.date) baseRowObj.date = String(baseRowObj.date).split(' ')[0];
 
                 if (baseRowObj.age) {
                     const age = parseInt(baseRowObj.age);
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                const procCodes = baseRowObj.procCode ? String(baseRowObj.procCode).split('-') : [''];
+                // CORREÇÃO: Não dividimos mais a linha. Processamos ela inteira como um único atendimento.
+                const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
+                baseRowObj.hasEvolucao = checkEvolucao(baseRowObj.idEvolucao) || checkEvolucao(baseRowObj.dataEvolucao);
                 
-                procCodes.forEach(code => {
-                    const rowObj = { ...baseRowObj, procCode: code.trim() };
-                    const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null";
-                    rowObj.hasEvolucao = checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao);
-                    
-                    newAtendimentos.push(rowObj);
-                });
+                newAtendimentos.push(baseRowObj);
             });
         }
     }
