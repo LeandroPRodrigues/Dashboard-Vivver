@@ -18,7 +18,7 @@ export const DemandDashboard = ({ demandData }) => {
     year: 'all', months: [], services: [], procedures: [], priorities: [], reqUnits: [] 
   });
 
-  // --- OPÇÕES DE FILTROS (Com Filtro em Cascata para Procedimentos) ---
+  // --- OPÇÕES DE FILTROS ---
   const options = useMemo(() => {
      const services = new Set(); const years = new Set();
      const priorities = new Set(); const reqUnits = new Set();
@@ -27,14 +27,9 @@ export const DemandDashboard = ({ demandData }) => {
      demandData.forEach(d => { 
          if (d.serviceType) services.add(d.serviceType); 
          if (d.ano) years.add(d.ano); 
-         
-         // Captura as prioridades brutas para o filtro
          if (d.priority) priorities.add(d.priority);
-         
          if (d.reqUnit) reqUnits.add(d.reqUnit);
 
-         // FILTRO EM CASCATA: Só adiciona o procedimento se o tipo de serviço dele estiver selecionado 
-         // (ou se nenhum tipo de serviço estiver selecionado)
          if (filters.services.length === 0 || filters.services.includes(d.serviceType)) {
              if (d.procedure) procedures.add(d.procedure);
          }
@@ -48,7 +43,7 @@ export const DemandDashboard = ({ demandData }) => {
          reqUnits: Array.from(reqUnits).sort().map(u => ({label: u, value: u})),
          months: MONTH_NAMES.map((name, idx) => ({ label: name, value: idx + 1 }))
      };
-  }, [demandData, filters.services]); // <-- Recalcula os procedimentos quando os serviços mudam!
+  }, [demandData, filters.services]);
 
   // --- DADOS FILTRADOS ---
   const filteredDemand = useMemo(() => {
@@ -78,9 +73,6 @@ export const DemandDashboard = ({ demandData }) => {
           if (item.waitDays !== undefined) totalWait += item.waitDays;
           if (item.patientId) uniquePatients.add(item.patientId);
           
-          // ========================================================
-          // LÓGICA RIGOROSA DE PRIORIDADES (P1, P2, SP)
-          // ========================================================
           const rawPrio = String(item.priority || '').trim().toUpperCase();
           let prioGroup = 'Outras priorizações';
           
@@ -88,14 +80,8 @@ export const DemandDashboard = ({ demandData }) => {
           else if (rawPrio === 'P2') prioGroup = 'P2';
           else if (rawPrio === 'SP') prioGroup = 'SP';
           
-          // Contagem do KPI (Casos Prioritários apenas se for P1, P2 ou SP)
-          if (prioGroup !== 'Outras priorizações') {
-              priorityCount++;
-          }
-          
-          // Agrupamento para o gráfico de Rosca
+          if (prioGroup !== 'Outras priorizações') priorityCount++;
           byPriority[prioGroup] = (byPriority[prioGroup] || 0) + 1;
-          // ========================================================
 
           const my = item.ano && item.mes ? `${item.ano}-${String(item.mes).padStart(2, '0')}` : 'N/A';
           byMonth[my] = (byMonth[my] || 0) + 1;
@@ -123,7 +109,6 @@ export const DemandDashboard = ({ demandData }) => {
           return { name: `${MONTH_NAMES[parseInt(m)-1]}/${y.slice(2)}`, value: byMonth[k] };
       });
 
-      // Ordena o gráfico de prioridades para que as mais críticas apareçam primeiro
       const priorityOrder = ['P1', 'P2', 'SP', 'Outras priorizações'];
       const priorityChart = Object.keys(byPriority)
           .map(k => ({ name: k, value: byPriority[k] }))
@@ -136,7 +121,9 @@ export const DemandDashboard = ({ demandData }) => {
           totalRequests, totalPatients: uniquePatients.size, avgWait, percPriority,
           priorityChart, evolutionChart, topProcedures: sortChart(byProcedure).slice(0, 10),
           specialtyChart: sortChart(bySpecialty).slice(0, 10),
-          serviceChart: sortChart(byService), reqUnitChart: sortChart(byReqUnit).slice(0, 15),
+          // Adicionado o cálculo de percentagem na Tabela de Serviços
+          serviceChart: sortChart(byService).map(item => ({ ...item, percent: totalRequests > 0 ? ((item.value / totalRequests) * 100).toFixed(1) : 0 })), 
+          reqUnitChart: sortChart(byReqUnit).slice(0, 15),
           multiplePatientsChart, agingChart, rawTable: filteredDemand.slice(0, 100) 
       };
   }, [filteredDemand]);
@@ -191,10 +178,10 @@ export const DemandDashboard = ({ demandData }) => {
                        <ResponsiveContainer width="100%" height="100%">
                            <PieChart>
                                <Pie data={stats.priorityChart} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} fill="#8884d8">
-                                   <Cell fill="#ef4444"/> {/* P1: Vermelho */}
-                                   <Cell fill="#f97316"/> {/* P2: Laranja */}
-                                   <Cell fill="#f59e0b"/> {/* SP: Amarelo */}
-                                   <Cell fill="#94a3b8"/> {/* Outras: Cinza */}
+                                   <Cell fill="#ef4444"/>
+                                   <Cell fill="#f97316"/>
+                                   <Cell fill="#f59e0b"/>
+                                   <Cell fill="#94a3b8"/>
                                </Pie>
                                <RechartsTooltip />
                                <Legend layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: '11px' }}/>
@@ -212,10 +199,36 @@ export const DemandDashboard = ({ demandData }) => {
           <div className="flex items-center gap-2 mb-4 border-b pb-2"><Stethoscope className="text-green-600"/><h2 className="text-xl font-bold text-slate-800">Painel Clínico e de Procedimentos</h2></div>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-               <Card className="p-6 lg:col-span-1">
-                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-slate-400" /> Tipos de Serviço</h3><ExportWidget targetId="chart-tipos-servico" fileName="tipos_servico" /></div>
-                   <div id="chart-tipos-servico" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={stats.serviceChart} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} fill="#8884d8" label={false}>{stats.serviceChart.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><RechartsTooltip /><Legend layout="horizontal" verticalAlign="bottom" wrapperStyle={{ fontSize: '11px' }}/></PieChart></ResponsiveContainer></div>
+               {/* TABELA DE SERVIÇOS NO LUGAR DO GRÁFICO DE PIZZA */}
+               <Card className="p-0 border-t-4 border-t-blue-500 lg:col-span-1 overflow-hidden">
+                   <div className="p-6 pb-4 bg-white flex justify-between items-center">
+                       <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-slate-400" /> Tipos de Serviço</h3></div>
+                       <ExportWidget targetId="table-tipos-servico" fileName="tipos_servico" dataForExcel={stats.serviceChart} />
+                   </div>
+                   <div className="overflow-x-auto">
+                       <div id="table-tipos-servico" className="max-h-64 overflow-y-auto bg-white px-4 pb-4">
+                           <table className="w-full text-sm text-left text-slate-600">
+                               <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
+                                   <tr>
+                                       <th className="px-4 py-3 font-bold border-b">Serviço</th>
+                                       <th className="px-4 py-3 font-bold border-b text-right">Qtd</th>
+                                       <th className="px-4 py-3 font-bold border-b text-right">%</th>
+                                   </tr>
+                               </thead>
+                               <tbody className="divide-y divide-slate-100">
+                                   {stats.serviceChart.map((serv, index) => (
+                                       <tr key={index} className="hover:bg-slate-50">
+                                           <td className="px-4 py-2 font-medium truncate max-w-[150px]" title={serv.name}>{serv.name}</td>
+                                           <td className="px-4 py-2 text-right font-bold text-slate-700">{serv.value.toLocaleString()}</td>
+                                           <td className="px-4 py-2 text-right text-slate-400 text-xs">{serv.percent}%</td>
+                                       </tr>
+                                   ))}
+                               </tbody>
+                           </table>
+                       </div>
+                   </div>
                </Card>
+               
                <Card className="p-6 lg:col-span-2">
                    <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><List size={20} className="text-slate-400" /> Top 10 Procedimentos Aguardados</h3><ExportWidget targetId="chart-top-procs" fileName="top_procedimentos" /></div>
                    <div id="chart-top-procs" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.topProcedures} margin={{ top: 5, right: 30, left: 120, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fontSize: 10}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} /><Bar dataKey="value" name="Solicitações" fill="#10b981" radius={[0, 4, 4, 0]} barSize={15} /></BarChart></ResponsiveContainer></div>
