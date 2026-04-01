@@ -62,10 +62,10 @@ export const DemandDashboard = ({ demandData }) => {
   const stats = useMemo(() => {
       const totalRequests = filteredDemand.length;
       let totalWait = 0; 
-      let priorityCount = 0;
+      let priorityCount = 0; // Vai contar APENAS P1 agora
       
       const uniquePatients = new Set();
-      const byMonth = {}; const byPriority = {}; const byProcedure = {}; const bySpecialty = {};
+      const byMonth = {}; const byPriority = {}; const byProcedure = {}; 
       const byService = {}; const byReqUnit = {}; const patientMap = {}; 
       const byAgeCategory = { '0 a 30 dias': 0, '31 a 90 dias': 0, '91 a 365 dias': 0, 'Mais de 1 ano': 0 };
 
@@ -80,14 +80,15 @@ export const DemandDashboard = ({ demandData }) => {
           else if (rawPrio === 'P2') prioGroup = 'P2';
           else if (rawPrio === 'SP') prioGroup = 'SP';
           
-          if (prioGroup !== 'Outras priorizações') priorityCount++;
+          // CONTAGEM RESTRITA: Apenas P1 entra no percentual principal
+          if (prioGroup === 'P1') priorityCount++;
+          
           byPriority[prioGroup] = (byPriority[prioGroup] || 0) + 1;
 
           const my = item.ano && item.mes ? `${item.ano}-${String(item.mes).padStart(2, '0')}` : 'N/A';
           byMonth[my] = (byMonth[my] || 0) + 1;
 
           const proc = item.procedure || 'Não Informado'; byProcedure[proc] = (byProcedure[proc] || 0) + 1;
-          const spec = item.execSpecialty || 'Não Informado'; bySpecialty[spec] = (bySpecialty[spec] || 0) + 1;
           const serv = item.serviceType || 'Não Informado'; byService[serv] = (byService[serv] || 0) + 1;
           const reqU = item.reqUnit || 'Não Informada'; byReqUnit[reqU] = (byReqUnit[reqU] || 0) + 1;
           
@@ -120,8 +121,6 @@ export const DemandDashboard = ({ demandData }) => {
       return { 
           totalRequests, totalPatients: uniquePatients.size, avgWait, percPriority,
           priorityChart, evolutionChart, topProcedures: sortChart(byProcedure).slice(0, 10),
-          specialtyChart: sortChart(bySpecialty).slice(0, 10),
-          // Adicionado o cálculo de percentagem na Tabela de Serviços
           serviceChart: sortChart(byService).map(item => ({ ...item, percent: totalRequests > 0 ? ((item.value / totalRequests) * 100).toFixed(1) : 0 })), 
           reqUnitChart: sortChart(byReqUnit).slice(0, 15),
           multiplePatientsChart, agingChart, rawTable: filteredDemand.slice(0, 100) 
@@ -164,7 +163,9 @@ export const DemandDashboard = ({ demandData }) => {
               <Card className="p-6 border-l-4 border-l-blue-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Pacientes na Fila</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalPatients.toLocaleString()}</h3></div><div className="p-3 bg-blue-50 rounded-full text-blue-600"><Users size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Prontuários Únicos</p></Card>
               <Card className="p-6 border-l-4 border-l-orange-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Total de Solicitações</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalRequests.toLocaleString()}</h3></div><div className="p-3 bg-orange-50 rounded-full text-orange-600"><List size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Procedimentos pendentes</p></Card>
               <Card className="p-6 border-l-4 border-l-red-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Tempo Médio Espera</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.avgWait} <span className="text-sm font-normal text-slate-500">dias</span></h3></div><div className="p-3 bg-red-50 rounded-full text-red-600"><Clock size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Desde a data do pedido</p></Card>
-              <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Casos Prioritários</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.percPriority}%</h3></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><AlertTriangle size={24} /></div></div><p className="text-xs text-slate-400 mt-2">P1, P2 e SP</p></Card>
+              
+              {/* O TEXTO DO CARD FOI ATUALIZADO AQUI */}
+              <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Casos Prioritários</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.percPriority}%</h3></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><AlertTriangle size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Apenas P1</p></Card>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -199,7 +200,6 @@ export const DemandDashboard = ({ demandData }) => {
           <div className="flex items-center gap-2 mb-4 border-b pb-2"><Stethoscope className="text-green-600"/><h2 className="text-xl font-bold text-slate-800">Painel Clínico e de Procedimentos</h2></div>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-               {/* TABELA DE SERVIÇOS NO LUGAR DO GRÁFICO DE PIZZA */}
                <Card className="p-0 border-t-4 border-t-blue-500 lg:col-span-1 overflow-hidden">
                    <div className="p-6 pb-4 bg-white flex justify-between items-center">
                        <div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Activity size={20} className="text-slate-400" /> Tipos de Serviço</h3></div>
@@ -232,13 +232,6 @@ export const DemandDashboard = ({ demandData }) => {
                <Card className="p-6 lg:col-span-2">
                    <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><List size={20} className="text-slate-400" /> Top 10 Procedimentos Aguardados</h3><ExportWidget targetId="chart-top-procs" fileName="top_procedimentos" /></div>
                    <div id="chart-top-procs" className="h-64 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.topProcedures} margin={{ top: 5, right: 30, left: 120, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fontSize: 10}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} /><Bar dataKey="value" name="Solicitações" fill="#10b981" radius={[0, 4, 4, 0]} barSize={15} /></BarChart></ResponsiveContainer></div>
-               </Card>
-          </div>
-
-          <div className="grid grid-cols-1 mb-6">
-               <Card className="p-6">
-                   <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Fila por Especialidade Executante</h3><ExportWidget targetId="chart-top-specs" fileName="top_especialidades" /></div>
-                   <div id="chart-top-specs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.specialtyChart} margin={{ top: 5, right: 30, left: 120, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fontSize: 10}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} /><Bar dataKey="value" name="Solicitações" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={15} /></BarChart></ResponsiveContainer></div>
                </Card>
           </div>
       </section>
