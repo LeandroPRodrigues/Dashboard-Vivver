@@ -4,20 +4,38 @@ import { fixEncoding, normalizeHeader } from './helpers.js';
 
 const parseExcelDate = (dateVal) => {
     if (!dateVal) return null;
+    let ano, mes, dt;
+    
     if (typeof dateVal === 'number') {
         const parsed = XLSX.SSF.parse_date_code(dateVal);
-        return { ano: String(parsed.y), mes: parsed.m, dt: new Date(parsed.y, parsed.m - 1, parsed.d) };
-    }
-    const strDate = String(dateVal).trim().split(' ')[0]; 
-    const parts = strDate.split(/[\/\-]/);
-    if (parts.length === 3) {
-        if (parts[2].length === 4) { 
-            return { ano: parts[2], mes: parseInt(parts[1], 10), dt: new Date(parts[2], parseInt(parts[1], 10) - 1, parts[0]) };
-        } else if (parts[0].length === 4) { 
-            return { ano: parts[0], mes: parseInt(parts[1], 10), dt: new Date(parts[0], parseInt(parts[1], 10) - 1, parts[2]) };
+        ano = String(parsed.y);
+        mes = parsed.m;
+        dt = new Date(parsed.y, parsed.m - 1, parsed.d);
+    } else {
+        const strDate = String(dateVal).trim().split(' ')[0]; 
+        const parts = strDate.split(/[\/\-]/);
+        if (parts.length === 3) {
+            if (parts[2].length === 4) { 
+                ano = parts[2];
+                mes = parseInt(parts[1], 10);
+                dt = new Date(parts[2], parseInt(parts[1], 10) - 1, parts[0]);
+            } else if (parts[0].length === 4) { 
+                ano = parts[0];
+                mes = parseInt(parts[1], 10);
+                dt = new Date(parts[0], parseInt(parts[1], 10) - 1, parts[2]);
+            }
         }
     }
-    return { ano: 'N/A', mes: 0, dt: null };
+    
+    // ========================================================
+    // CORREÇÃO GLOBAL: Se o ano for 1900, converte para 2024
+    // ========================================================
+    if (ano === '1900') {
+        ano = '2024';
+        if (dt) dt.setFullYear(2024);
+    }
+    
+    return { ano: ano || 'N/A', mes: mes || 0, dt: dt || null };
 };
 
 export const processFiles = async (files) => {
@@ -96,10 +114,16 @@ export const processFiles = async (files) => {
                     const parsedDate = parseExcelDate(rowObj.reqDate);
                     if (parsedDate && parsedDate.dt) {
                         rowObj.dateObj = parsedDate.dt;
-                        // <-- ALTERADO: 1900 vira 2024 -->
-                        rowObj.ano = parsedDate.ano === '1900' ? '2024' : parsedDate.ano;
+                        rowObj.ano = parsedDate.ano;
                         rowObj.mes = parsedDate.mes;
                         
+                        // Reescreve a data bonitinha para a tabela (já com 2024 caso fosse 1900)
+                        const d = String(parsedDate.dt.getDate()).padStart(2, '0');
+                        const m = String(parsedDate.dt.getMonth() + 1).padStart(2, '0');
+                        const y = parsedDate.dt.getFullYear();
+                        rowObj.reqDate = `${d}/${m}/${y}`;
+                        
+                        // Cálculo correto dos dias
                         const diffTime = now - parsedDate.dt;
                         rowObj.waitDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24))); 
                         
@@ -158,9 +182,17 @@ export const processFiles = async (files) => {
                 baseRowObj.time = timeStr;
 
                 let parsedDate = parseExcelDate(baseRowObj.date);
-                baseRowObj.ano_final = parsedDate.ano;
-                baseRowObj.mes_final = parsedDate.mes;
-                baseRowObj.dateObj = parsedDate.dt;
+                
+                if (parsedDate && parsedDate.dt) {
+                    const d = String(parsedDate.dt.getDate()).padStart(2, '0');
+                    const m = String(parsedDate.dt.getMonth() + 1).padStart(2, '0');
+                    const y = parsedDate.dt.getFullYear();
+                    baseRowObj.date = `${y}-${m}-${d}`;
+                }
+
+                baseRowObj.ano_final = parsedDate ? parsedDate.ano : 'N/A';
+                baseRowObj.mes_final = parsedDate ? parsedDate.mes : 0;
+                baseRowObj.dateObj = parsedDate ? parsedDate.dt : null;
 
                 if (baseRowObj.age) {
                     const age = parseInt(baseRowObj.age);

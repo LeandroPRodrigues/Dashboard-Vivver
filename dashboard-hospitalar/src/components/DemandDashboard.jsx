@@ -18,7 +18,7 @@ export const DemandDashboard = ({ demandData }) => {
     year: 'all', months: [], services: [], procedures: [], priorities: [], reqUnits: [] 
   });
   
-  // NOVO: Guarda o ID do paciente selecionado com duplo clique
+  // Guarda o ID do paciente selecionado com duplo clique
   const [selectedPatientId, setSelectedPatientId] = useState(null);
 
   // Limpa o paciente selecionado se os filtros mudarem
@@ -64,7 +64,7 @@ export const DemandDashboard = ({ demandData }) => {
       });
   }, [demandData, filters]);
 
-  // NOVO: Pega apenas as solicitações do paciente selecionado
+  // Pega apenas as solicitações do paciente selecionado
   const selectedPatientRequests = useMemo(() => {
       if (!selectedPatientId) return [];
       return filteredDemand.filter(req => req.patientId === selectedPatientId);
@@ -106,7 +106,6 @@ export const DemandDashboard = ({ demandData }) => {
           if (item.ageCategory) byAgeCategory[item.ageCategory]++;
 
           if (item.patientId) {
-              // NOVO: Adicionado o ID no mapa para conseguirmos filtrar depois
               if (!patientMap[item.patientId]) patientMap[item.patientId] = { id: item.patientId, name: item.patientName || 'Sem Nome', count: 0 };
               patientMap[item.patientId].count++;
           }
@@ -320,6 +319,8 @@ export const DemandDashboard = ({ demandData }) => {
                     <table className="w-full text-xs text-left text-slate-600">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
                             <tr>
+                                {/* NOVA COLUNA ADICIONADA AQUI */}
+                                <th className="px-6 py-3 font-bold">Data Solic.</th> 
                                 <th className="px-6 py-3 font-bold">Serviço</th>
                                 <th className="px-6 py-3 font-bold">Procedimento</th>
                                 <th className="px-6 py-3 font-bold">Prioridade</th>
@@ -329,6 +330,8 @@ export const DemandDashboard = ({ demandData }) => {
                         <tbody className="divide-y divide-slate-100">
                             {selectedPatientRequests.map((req, i) => (
                                 <tr key={i} className="hover:bg-slate-50">
+                                    {/* DADO DA DATA INSERIDO AQUI */}
+                                    <td className="px-6 py-3 font-medium text-slate-800">{req.reqDate || '-'}</td>
                                     <td className="px-6 py-3 font-medium text-slate-800">{req.serviceType || '-'}</td>
                                     <td className="px-6 py-3 text-slate-600">{req.procedure || '-'}</td>
                                     <td className="px-6 py-3">
