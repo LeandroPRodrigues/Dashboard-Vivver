@@ -62,7 +62,6 @@ export const processFiles = async (files) => {
         let headerIdx = 0;
         for (let i = 0; i < Math.min(10, rows.length); i++) {
             const rowStr = rows[i].join('').toLowerCase();
-            // Atualizado para reconhecer rapidamente o ficheiro de demanda reprimida
             if (rowStr.includes('codigo_procedimento') || rowStr.includes('codigo_municipio') || 
                 rowStr.includes('data_atendimento') || rowStr.includes('data_solicitacao') ||
                 rowStr.includes('codespecialidade') || rowStr.includes('mes_ano_solicitacao')) {
@@ -93,19 +92,17 @@ export const processFiles = async (files) => {
                     }
                 });
 
-                // Cálculos específicos para a Fila de Espera (Demanda)
                 if (rowObj.reqDate) {
                     const parsedDate = parseExcelDate(rowObj.reqDate);
                     if (parsedDate && parsedDate.dt) {
                         rowObj.dateObj = parsedDate.dt;
-                        rowObj.ano = parsedDate.ano;
+                        // <-- ALTERADO: 1900 vira 2024 -->
+                        rowObj.ano = parsedDate.ano === '1900' ? '2024' : parsedDate.ano;
                         rowObj.mes = parsedDate.mes;
                         
-                        // Calcula dias na fila de espera
                         const diffTime = now - parsedDate.dt;
                         rowObj.waitDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24))); 
                         
-                        // Classificação do Envelhecimento da Fila
                         if (rowObj.waitDays <= 30) rowObj.ageCategory = '0 a 30 dias';
                         else if (rowObj.waitDays <= 90) rowObj.ageCategory = '31 a 90 dias';
                         else if (rowObj.waitDays <= 365) rowObj.ageCategory = '91 a 365 dias';
@@ -113,20 +110,15 @@ export const processFiles = async (files) => {
                     }
                 }
                 
-                // Trata as prioridades vazias
                 if (!rowObj.priority || String(rowObj.priority).trim() === '') {
                     rowObj.priority = 'NÃO CLASSIFICADO';
                 }
 
-                // Garante que só carrega linhas válidas
                 if (rowObj.procedure || rowObj.serviceType) {
                     newDemanda.push(rowObj);
                 }
             });
         } else {
-            // ==========================================
-            // LÓGICA DOS ATENDIMENTOS (INTACTA - FUNCIONANDO 100%)
-            // ==========================================
             const headerMap = rawHeaders.map(h => normalizeHeader(h, COLUMN_ALIASES)); 
             
             dataRows.forEach(values => {
@@ -175,18 +167,16 @@ export const processFiles = async (files) => {
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null" && String(val).trim() !== '""';
-                const isEvolucao = checkEvolucao(baseRowObj.idEvolucao);
-
-                baseRowObj.hasEvolucao = isEvolucao;
-
-                if (isEvolucao) {
-                    baseRowObj.procCode = '0301060029'; 
-                } else {
-                    baseRowObj.procCode = '0301060096'; 
-                }
-
-                newAtendimentos.push(baseRowObj);
+                const procCodes = baseRowObj.procCode ? String(baseRowObj.procCode).split('-') : [''];
+                
+                procCodes.forEach((code, index) => {
+                    const rowObj = { ...baseRowObj, procCode: code.trim() };
+                    const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null" && String(val).trim() !== '""';
+                    
+                    rowObj.hasEvolucao = index === 0 ? (checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao)) : false;
+                    
+                    newAtendimentos.push(rowObj);
+                });
             });
         }
     }

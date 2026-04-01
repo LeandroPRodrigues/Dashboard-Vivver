@@ -39,7 +39,6 @@ export const COLUMN_ALIASES = {
   tipo: ['tipo', 'Tipo', 'TIPO']
 };
 
-// --- AQUI ESTÁ A NOVIDADE: Mapeamento completo para Demanda Reprimida ---
 export const DEMAND_ALIASES = {
   reqDate: ['data_solicitacao'],
   monthYear: ['mes_ano_solicitacao'],
@@ -49,7 +48,7 @@ export const DEMAND_ALIASES = {
   procedure: ['nome_procedimento'],
   execSpecialty: ['nome_especialidade_cbo_executante'],
   cid: ['codcid_justifica_solicitacao'],
-  serviceType: ['tipo_servico'],
+  serviceType: ['nome', 'Nome'], // <-- ALTERADO PARA LER A COLUNA 'nome' REAL
   reqUnit: ['nom_und_sol'],
   refUnit: ['nom_und_ref'],
   area: ['codarea'],
