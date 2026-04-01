@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
   Cell, PieChart, Pie, AreaChart, Area
@@ -13,10 +13,16 @@ import { ExportWidget } from './ExportWidget.jsx';
 import { COLORS, MONTH_NAMES } from '../utils/constants.js';
 
 export const DemandDashboard = ({ demandData }) => {
-  // --- STATES DE FILTROS ---
+  // --- STATES DE FILTROS E SELEÇÃO ---
   const [filters, setFilters] = useState({ 
     year: 'all', months: [], services: [], procedures: [], priorities: [], reqUnits: [] 
   });
+  
+  // NOVO: Guarda o ID do paciente selecionado com duplo clique
+  const [selectedPatientId, setSelectedPatientId] = useState(null);
+
+  // Limpa o paciente selecionado se os filtros mudarem
+  useEffect(() => { setSelectedPatientId(null); }, [filters]);
 
   // --- OPÇÕES DE FILTROS ---
   const options = useMemo(() => {
@@ -58,11 +64,17 @@ export const DemandDashboard = ({ demandData }) => {
       });
   }, [demandData, filters]);
 
+  // NOVO: Pega apenas as solicitações do paciente selecionado
+  const selectedPatientRequests = useMemo(() => {
+      if (!selectedPatientId) return [];
+      return filteredDemand.filter(req => req.patientId === selectedPatientId);
+  }, [filteredDemand, selectedPatientId]);
+
   // --- CÁLCULO DAS MÉTRICAS ---
   const stats = useMemo(() => {
       const totalRequests = filteredDemand.length;
       let totalWait = 0; 
-      let priorityCount = 0; // Vai contar APENAS P1 agora
+      let priorityCount = 0; 
       
       const uniquePatients = new Set();
       const byMonth = {}; const byPriority = {}; const byProcedure = {}; 
@@ -80,7 +92,6 @@ export const DemandDashboard = ({ demandData }) => {
           else if (rawPrio === 'P2') prioGroup = 'P2';
           else if (rawPrio === 'SP') prioGroup = 'SP';
           
-          // CONTAGEM RESTRITA: Apenas P1 entra no percentual principal
           if (prioGroup === 'P1') priorityCount++;
           
           byPriority[prioGroup] = (byPriority[prioGroup] || 0) + 1;
@@ -95,7 +106,8 @@ export const DemandDashboard = ({ demandData }) => {
           if (item.ageCategory) byAgeCategory[item.ageCategory]++;
 
           if (item.patientId) {
-              if (!patientMap[item.patientId]) patientMap[item.patientId] = { name: item.patientName || 'Sem Nome', count: 0 };
+              // NOVO: Adicionado o ID no mapa para conseguirmos filtrar depois
+              if (!patientMap[item.patientId]) patientMap[item.patientId] = { id: item.patientId, name: item.patientName || 'Sem Nome', count: 0 };
               patientMap[item.patientId].count++;
           }
       });
@@ -163,8 +175,6 @@ export const DemandDashboard = ({ demandData }) => {
               <Card className="p-6 border-l-4 border-l-blue-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Pacientes na Fila</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalPatients.toLocaleString()}</h3></div><div className="p-3 bg-blue-50 rounded-full text-blue-600"><Users size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Prontuários Únicos</p></Card>
               <Card className="p-6 border-l-4 border-l-orange-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Total de Solicitações</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalRequests.toLocaleString()}</h3></div><div className="p-3 bg-orange-50 rounded-full text-orange-600"><List size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Procedimentos pendentes</p></Card>
               <Card className="p-6 border-l-4 border-l-red-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Tempo Médio Espera</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.avgWait} <span className="text-sm font-normal text-slate-500">dias</span></h3></div><div className="p-3 bg-red-50 rounded-full text-red-600"><Clock size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Desde a data do pedido</p></Card>
-              
-              {/* O TEXTO DO CARD FOI ATUALIZADO AQUI */}
               <Card className="p-6 border-l-4 border-l-purple-500"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-400 uppercase">Casos Prioritários</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.percPriority}%</h3></div><div className="p-3 bg-purple-50 rounded-full text-purple-600"><AlertTriangle size={24} /></div></div><p className="text-xs text-slate-400 mt-2">Apenas P1</p></Card>
           </div>
 
@@ -247,11 +257,93 @@ export const DemandDashboard = ({ demandData }) => {
                    <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><MapPin size={20} className="text-slate-400" /> Top UBS / Unidades Solicitantes</h3><ExportWidget targetId="chart-ubs" fileName="ubs_solicitantes" /></div>
                    <div id="chart-ubs" className="h-80 w-full bg-white p-2"><ResponsiveContainer width="100%" height="100%"><BarChart layout="vertical" data={stats.reqUnitChart} margin={{ top: 5, right: 30, left: 100, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} tick={{fontSize: 9}} interval={0} /><RechartsTooltip cursor={{fill: '#f1f5f9'}} /><Bar dataKey="value" name="Solicitações" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={15} /></BarChart></ResponsiveContainer></div>
                </Card>
-               <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden">
-                   <div className="p-6 pb-4 bg-white flex justify-between items-center"><div><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Pacientes com Múltiplas Solicitações</h3><p className="text-xs text-slate-500 mt-1">Atenção a pacientes hiper-utilizadores do TFD</p></div><ExportWidget targetId="table-multi" fileName="multiplas_solicitacoes" dataForExcel={stats.multiplePatientsChart} /></div>
-                   <div className="overflow-x-auto"><div id="table-multi" className="max-h-80 overflow-y-auto bg-white px-4 pb-4"><table className="w-full text-sm text-left text-slate-600"><thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0"><tr><th className="px-4 py-3 font-bold border-b">Paciente</th><th className="px-4 py-3 font-bold border-b text-center">Pedidos na Fila</th></tr></thead><tbody className="divide-y divide-slate-100">{stats.multiplePatientsChart.map((pt, i) => (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2 font-medium truncate max-w-[200px]" title={pt.name}>{pt.name}</td><td className="px-4 py-2 text-center"><span className="bg-amber-100 text-amber-800 font-bold px-2 py-1 rounded-full text-xs">{pt.count}</span></td></tr>))}</tbody></table></div></div>
+               
+               <Card className="p-0 border-t-4 border-t-amber-400 overflow-hidden flex flex-col h-full">
+                   <div className="p-6 pb-4 bg-white flex justify-between items-center">
+                       <div>
+                           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-slate-400" /> Pacientes com Múltiplas Solicitações</h3>
+                           <p className="text-xs text-slate-500 mt-1">Dê duplo clique no paciente para ver detalhes</p>
+                       </div>
+                       <ExportWidget targetId="table-multi" fileName="multiplas_solicitacoes" dataForExcel={stats.multiplePatientsChart} />
+                   </div>
+                   <div className="overflow-x-auto flex-1">
+                       <div id="table-multi" className="max-h-80 overflow-y-auto bg-white px-4 pb-4">
+                           <table className="w-full text-sm text-left text-slate-600">
+                               <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0">
+                                   <tr>
+                                       <th className="px-4 py-3 font-bold border-b">Paciente</th>
+                                       <th className="px-4 py-3 font-bold border-b text-center">Pedidos na Fila</th>
+                                   </tr>
+                               </thead>
+                               <tbody className="divide-y divide-slate-100">
+                                   {stats.multiplePatientsChart.map((pt, i) => (
+                                       <tr 
+                                         key={i} 
+                                         className={`cursor-pointer transition-colors ${selectedPatientId === pt.id ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
+                                         onDoubleClick={() => setSelectedPatientId(pt.id)}
+                                         title="Dê duplo clique para ver as solicitações deste paciente"
+                                       >
+                                           <td className={`px-4 py-2 font-medium truncate max-w-[200px] ${selectedPatientId === pt.id ? 'text-indigo-700' : ''}`} title={pt.name}>{pt.name}</td>
+                                           <td className="px-4 py-2 text-center">
+                                               <span className={`font-bold px-2 py-1 rounded-full text-xs ${selectedPatientId === pt.id ? 'bg-indigo-200 text-indigo-800' : 'bg-amber-100 text-amber-800'}`}>
+                                                   {pt.count}
+                                               </span>
+                                           </td>
+                                       </tr>
+                                   ))}
+                               </tbody>
+                           </table>
+                       </div>
+                   </div>
                </Card>
           </div>
+
+          {/* ========================================== */}
+          {/* TABELA DE DETALHE DO PACIENTE (DRILL-DOWN) */}
+          {/* ========================================== */}
+          {selectedPatientId && (
+             <Card className="p-0 border-t-4 border-t-indigo-500 overflow-hidden mb-6 animate-in slide-in-from-top-4 fade-in duration-300 shadow-md">
+                <div className="p-4 bg-indigo-50/50 flex justify-between items-center border-b border-indigo-100">
+                    <div>
+                        <h3 className="text-md font-bold text-indigo-900 flex items-center gap-2">
+                            <List size={18} className="text-indigo-400" /> Detalhes das Solicitações
+                        </h3>
+                        <p className="text-sm font-medium text-slate-600 mt-1">
+                            Paciente: <strong className="text-indigo-700">{selectedPatientRequests[0]?.patientName || selectedPatientId}</strong>
+                        </p>
+                    </div>
+                    <button onClick={() => setSelectedPatientId(null)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors" title="Fechar painel">
+                        <X size={20} />
+                    </button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left text-slate-600">
+                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th className="px-6 py-3 font-bold">Serviço</th>
+                                <th className="px-6 py-3 font-bold">Procedimento</th>
+                                <th className="px-6 py-3 font-bold">Prioridade</th>
+                                <th className="px-6 py-3 font-bold text-center">Dias na Fila</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {selectedPatientRequests.map((req, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                    <td className="px-6 py-3 font-medium text-slate-800">{req.serviceType || '-'}</td>
+                                    <td className="px-6 py-3 text-slate-600">{req.procedure || '-'}</td>
+                                    <td className="px-6 py-3">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${String(req.priority).includes('P1') || String(req.priority).includes('P2') || String(req.priority).includes('SP') ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
+                                            {req.priority || 'N/C'}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-3 text-center font-bold text-slate-700">{req.waitDays}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+             </Card>
+          )}
       </section>
 
       {/* ========================================== */}
