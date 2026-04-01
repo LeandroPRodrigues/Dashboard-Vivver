@@ -62,9 +62,10 @@ export const processFiles = async (files) => {
         let headerIdx = 0;
         for (let i = 0; i < Math.min(10, rows.length); i++) {
             const rowStr = rows[i].join('').toLowerCase();
+            // Atualizado para reconhecer rapidamente o ficheiro de demanda reprimida
             if (rowStr.includes('codigo_procedimento') || rowStr.includes('codigo_municipio') || 
                 rowStr.includes('data_atendimento') || rowStr.includes('data_solicitacao') ||
-                rowStr.includes('codespecialidade')) {
+                rowStr.includes('codespecialidade') || rowStr.includes('mes_ano_solicitacao')) {
                 headerIdx = i;
                 break;
             }
@@ -74,7 +75,8 @@ export const processFiles = async (files) => {
         const dataRows = rows.slice(headerIdx + 1);
 
         const isDemanda = rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'reqDate') || 
-                          rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'unitRef');
+                          rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'monthYear') ||
+                          rawHeaders.some(h => normalizeHeader(h, DEMAND_ALIASES) === 'serviceType');
 
         if (isDemanda) {
             isDemandaFile = true;
@@ -86,22 +88,45 @@ export const processFiles = async (files) => {
                 if (!values || values.length === 0 || !values.join('').trim()) return;
                 const rowObj = {};
                 headerMap.forEach((key, index) => {
-                    if (values[index]) rowObj[key] = typeof values[index] === 'string' ? fixEncoding(values[index]) : values[index];
+                    if (key && values[index] !== undefined && values[index] !== "") {
+                        rowObj[key] = typeof values[index] === 'string' ? fixEncoding(values[index].trim()) : values[index];
+                    }
                 });
 
+                // Cálculos específicos para a Fila de Espera (Demanda)
                 if (rowObj.reqDate) {
                     const parsedDate = parseExcelDate(rowObj.reqDate);
                     if (parsedDate && parsedDate.dt) {
                         rowObj.dateObj = parsedDate.dt;
-                        rowObj.ano = parsedDate.ano === '1900' ? '2025' : parsedDate.ano;
+                        rowObj.ano = parsedDate.ano;
                         rowObj.mes = parsedDate.mes;
-                        const diffTime = Math.abs(now - parsedDate.dt);
-                        rowObj.waitDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                        
+                        // Calcula dias na fila de espera
+                        const diffTime = now - parsedDate.dt;
+                        rowObj.waitDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24))); 
+                        
+                        // Classificação do Envelhecimento da Fila
+                        if (rowObj.waitDays <= 30) rowObj.ageCategory = '0 a 30 dias';
+                        else if (rowObj.waitDays <= 90) rowObj.ageCategory = '31 a 90 dias';
+                        else if (rowObj.waitDays <= 365) rowObj.ageCategory = '91 a 365 dias';
+                        else rowObj.ageCategory = 'Mais de 1 ano';
                     }
                 }
-                newDemanda.push(rowObj);
+                
+                // Trata as prioridades vazias
+                if (!rowObj.priority || String(rowObj.priority).trim() === '') {
+                    rowObj.priority = 'NÃO CLASSIFICADO';
+                }
+
+                // Garante que só carrega linhas válidas
+                if (rowObj.procedure || rowObj.serviceType) {
+                    newDemanda.push(rowObj);
+                }
             });
         } else {
+            // ==========================================
+            // LÓGICA DOS ATENDIMENTOS (INTACTA - FUNCIONANDO 100%)
+            // ==========================================
             const headerMap = rawHeaders.map(h => normalizeHeader(h, COLUMN_ALIASES)); 
             
             dataRows.forEach(values => {
@@ -116,15 +141,12 @@ export const processFiles = async (files) => {
                     }
                 });
 
-                // 1. IGNORA ENFERMEIROS E TÉCNICOS
                 const cbo = String(baseRowObj.cboCode || '').trim();
                 if (cbo === '223505' || cbo === '322205') return; 
 
-                // 2. IGNORAR INTERNAÇÕES (TIPO 'I')
                 const tipoAtendimento = String(baseRowObj.tipo || '').trim().toUpperCase();
                 if (tipoAtendimento === 'I' || tipoAtendimento === 'INTERNAÇÃO') return;
 
-                // 3. SEPARAÇÃO DATA E HORA DEFINITIVA (Ex: 01/03/2026 09:58:00)
                 let dateStr = String(baseRowObj.date || '');
                 let timeStr = String(baseRowObj.time || '');
 
@@ -138,7 +160,7 @@ export const processFiles = async (files) => {
                     timeStr = parts[1];
                 }
 
-                if (!timeStr) timeStr = "00:00:00"; // Segurança caso venha sem hora
+                if (!timeStr) timeStr = "00:00:00"; 
 
                 baseRowObj.date = dateStr;
                 baseRowObj.time = timeStr;
@@ -153,20 +175,17 @@ export const processFiles = async (files) => {
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                // 4. REGRA DE OURO: 1 LINHA = 1 ATENDIMENTO OU 1 EVOLUÇÃO
-                // Verifica se tem algo válido no id_evolucao (ignorando strings vazias como '""')
                 const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null" && String(val).trim() !== '""';
                 const isEvolucao = checkEvolucao(baseRowObj.idEvolucao);
 
                 baseRowObj.hasEvolucao = isEvolucao;
 
                 if (isEvolucao) {
-                    baseRowObj.procCode = '0301060029'; // Força a ser lido como Observação/Evolução
+                    baseRowObj.procCode = '0301060029'; 
                 } else {
-                    baseRowObj.procCode = '0301060096'; // Força a ser lido como 1º Atendimento
+                    baseRowObj.procCode = '0301060096'; 
                 }
 
-                // Insere a linha única (sem duplicar)
                 newAtendimentos.push(baseRowObj);
             });
         }

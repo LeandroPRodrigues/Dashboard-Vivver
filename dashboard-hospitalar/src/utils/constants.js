@@ -18,7 +18,6 @@ export const HOSPITAL_PROCEDURE_MAP = {
   '301060029': 'Pacientes em observação', '0301060029': 'Pacientes em observação', '9990000096': 'Pacientes em observação'
 };
 
-// --- DEFININDO RIGOROSAMENTE OS CÓDIGOS ---
 export const ATEND_CODES = ['301060096', '0301060096', '9999999984'];
 export const OBS_CODES = ['301060029', '0301060029', '9990000096']; 
 
@@ -37,19 +36,24 @@ export const COLUMN_ALIASES = {
   gender: ['sexo', 'Sexo', 'Genero', 'indsexo'],
   idEvolucao: ['id_evolucao', 'Id Evolucao', 'ID EVOLUÇÃO'],
   dataEvolucao: ['data_evolucao', 'Data Evolucao', 'DATA EVOLUÇÃO'],
-  
-  // AQUI: Capturando a coluna "tipo" para filtrarmos as internações
   tipo: ['tipo', 'Tipo', 'TIPO']
 };
 
+// --- AQUI ESTÁ A NOVIDADE: Mapeamento completo para Demanda Reprimida ---
 export const DEMAND_ALIASES = {
-  reqDate: ['data_solicitacao', 'Data solicitacao'],
-  service: ['nome', 'Nome', 'tipo_servico'],
-  procedure: ['nome_procedimento', 'Procedimento'],
-  procCode: ['codigo_procedimento', 'cod_procedimento'],
-  unitRef: ['nom_und_ref', 'Unidade Referencia', 'codunidaderef'],
-  priority: ['nome_prioridade', 'Prioridade'],
-  patientId: ['numprontuario', 'Prontuario'],
-  cboName: ['nome_cbo_executante', 'CBO Executante', 'cbo_executante'],
-  age: ['idade', 'dt_nascimento', 'data_nascimento']
+  reqDate: ['data_solicitacao'],
+  monthYear: ['mes_ano_solicitacao'],
+  patientId: ['numprontuario'],
+  patientName: ['nompaciente'],
+  priority: ['nome_prioridade'],
+  procedure: ['nome_procedimento'],
+  execSpecialty: ['nome_especialidade_cbo_executante'],
+  cid: ['codcid_justifica_solicitacao'],
+  serviceType: ['tipo_servico'],
+  reqUnit: ['nom_und_sol'],
+  refUnit: ['nom_und_ref'],
+  area: ['codarea'],
+  microarea: ['codmicroarea'],
+  gender: ['indsexo'],
+  execUnit: ['nome_unidade_executante']
 };

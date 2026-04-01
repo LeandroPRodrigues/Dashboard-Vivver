@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Upload, FileText, Activity, Calendar, Stethoscope, AlertCircle, X, Table, 
-  ArrowRightLeft, LayoutDashboard, MapPin, Users, Watch, Printer, List, Clock, Sun, Moon, Trash2, ClipboardPlus
+  MapPin, Users, Watch, Printer, Clock, Sun, Moon, Trash2, ClipboardPlus, FileSpreadsheet
 } from 'lucide-react';
 
 // --- IMPORTAÇÕES MODULARIZADAS ---
@@ -13,6 +13,7 @@ import { Card } from './components/Card.jsx';
 import { Button } from './components/Button.jsx';
 import { MultiSelect } from './components/MultiSelect.jsx';
 import { ExportWidget } from './components/ExportWidget.jsx';
+import { DemandDashboard } from './components/DemandDashboard.jsx'; // <-- NOVO PAINEL IMPORTADO AQUI
 
 import { 
   COLORS, YEAR_COLORS, MONTH_NAMES, WEEK_DAYS, PERIOD_PRESETS, 
@@ -57,8 +58,8 @@ export default function Dashboard() {
   const [activeUnit, setActiveUnit] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoData, setIsDemoData] = useState(true);
-  const [isComparisonMode, setIsComparisonMode] = useState(false);
 
+  // --- STATES ATENDIMENTOS ---
   const [selectedYear, setSelectedYear] = useState('all');
   const [selectedMonths, setSelectedMonths] = useState([]);
   const [selectedSpecs, setSelectedSpecs] = useState([]);
@@ -66,9 +67,8 @@ export default function Dashboard() {
   const [selectedProfs, setSelectedProfs] = useState([]); 
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  const [compYears, setCompYears] = useState([]);
+  // --- STATE DEMANDA ---
   const [demandData, setDemandData] = useState([]);
-  const [demandFilters, setDemandFilters] = useState({ services: [], procedures: [], year: 'all', months: [] });
 
   useEffect(() => { 
       try { setRawData(generateMockData()); } catch (e) { console.error("Erro ao gerar dados:", e); }
@@ -95,12 +95,7 @@ export default function Dashboard() {
   }, [rawData]);
 
   useEffect(() => { if (availableUnits.length > 0 && !availableUnits.find(u => u.code === activeUnit)) setActiveUnit(availableUnits[0].code); }, [availableUnits, activeUnit]);
-  useEffect(() => { 
-      if (availableYears.length >= 1) { 
-          setSelectedYear(availableYears[0]);
-          setCompYears(availableYears.slice(0, Math.min(4, availableYears.length))); 
-      } 
-  }, [availableYears]);
+  useEffect(() => { if (availableYears.length >= 1) setSelectedYear(availableYears[0]); }, [availableYears]);
 
   const handleClearData = () => {
       if(window.confirm("Tem certeza que deseja limpar todos os dados carregados?")) {
@@ -148,6 +143,9 @@ export default function Dashboard() {
     event.target.value = '';
   };
 
+  // ============================================================================
+  // LÓGICA DE ATENDIMENTOS (MANTIDA 100% INTACTA)
+  // ============================================================================
   const unitData = useMemo(() => {
     return rawData
       .filter(item => String(item.unitCode || "").trim() === activeUnit)
@@ -157,9 +155,6 @@ export default function Dashboard() {
         const nomeProc = (item.procName || "PROCEDIMENTO NÃO INFORMADO").toUpperCase();
         
         if (activeUnit === '104') {
-          // ==========================================
-          // FILTRO SUPER RIGOROSO PARA A UNIDADE 104
-          // ==========================================
           if (OBS_CODES.includes(codProc)) {
               newItem.display_procedure = 'Pacientes em observação';
               newItem.isValid = true;
@@ -167,7 +162,6 @@ export default function Dashboard() {
               newItem.display_procedure = 'Primeiro atendimento';
               newItem.isValid = true;
           } else {
-              // Descarta procedimentos secundários que inflam os números
               newItem.isValid = false; 
           }
         } else {
@@ -304,54 +298,6 @@ export default function Dashboard() {
     return { total, totalEvolucoes, byMonth, bySpec, byCity, byAge, byWeekDay, byHour, byProf: allProfs.slice(0, 20), allProfs, profKeys: Array.from(profKeys), hospitalMatrixData };
   }, [filteredData, activeUnit, specRankMap]);
 
-  const isSpecializedSelected = useMemo(() => demandFilters.services.some(s => s && s.toLowerCase().includes("especializada")), [demandFilters.services]);
-  const demandOptions = useMemo(() => {
-     const services = new Set(); const procedures = new Set(); const years = new Set();
-     demandData.forEach(d => { if (d.service) services.add(d.service); if (d.procedure) procedures.add(d.procedure); if (d.ano) years.add(d.ano); });
-     return {
-         services: Array.from(services).sort().map(s => ({label: s, value: s})),
-         procedures: Array.from(procedures).sort().map(p => ({label: p, value: p})),
-         years: Array.from(years).sort().reverse().map(y => ({label: y, value: y})),
-         months: MONTH_NAMES.map((name, idx) => ({ label: name, value: idx + 1 }))
-     };
-  }, [demandData]);
-
-  const filteredDemand = useMemo(() => {
-      return demandData.filter(item => {
-          if (demandFilters.year !== 'all' && item.ano !== demandFilters.year) return false;
-          if (demandFilters.services.length > 0 && !demandFilters.services.includes(item.service)) return false;
-          if (demandFilters.procedures.length > 0 && !demandFilters.procedures.includes(item.procedure)) return false;
-          if (demandFilters.months.length > 0 && !demandFilters.months.includes(item.mes)) return false;
-          return true;
-      });
-  }, [demandData, demandFilters]);
-
-  const demandStats = useMemo(() => {
-      const total = filteredDemand.length;
-      let totalWait = 0; let countWait = 0;
-      const byService = {}; const byCbo = {}; const byUnit = {}; const byProcedure = {}; 
-
-      filteredDemand.forEach(item => {
-          if (item.waitDays) { totalWait += item.waitDays; countWait++; }
-          const s = item.service || 'Outros'; const cbo = item.cboName || 'Não Informado';
-          byService[s] = (byService[s] || 0) + 1; byCbo[cbo] = (byCbo[cbo] || 0) + 1;
-          const pCode = item.procCode || 'N/A'; const pName = item.procedure || 'Outros';
-          const pKey = isSpecializedSelected ? `${pCode}|${pName}|${cbo}` : `${pCode}|${pName}`;
-          if (!byProcedure[pKey]) byProcedure[pKey] = { code: pCode, name: pName, cbo: cbo, count: 0 };
-          byProcedure[pKey].count++;
-          const u = item.unitRef || 'Não Informado'; byUnit[u] = (byUnit[u] || 0) + 1;
-      });
-
-      const avgWait = countWait > 0 ? Math.round(totalWait / countWait) : 0;
-      const serviceChart = Object.keys(byService).map(k => ({ name: k, value: byService[k] })).sort((a,b) => b.value - a.value);
-      const cboChart = Object.keys(byCbo).map(k => ({ name: k, value: byCbo[k] })).sort((a,b) => b.value - a.value);
-      const unitChart = Object.keys(byUnit).map(k => ({ name: k, value: byUnit[k] })).sort((a,b) => b.value - a.value);
-      const procedureTable = Object.values(byProcedure).sort((a,b) => b.count - a.count);
-      const mainChart = isSpecializedSelected ? cboChart : serviceChart;
-
-      return { total, avgWait, mainChart, unitChart, procedureTable };
-  }, [filteredDemand, isSpecializedSelected]);
-
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800">
       <div id="dashboard-content" className="max-w-7xl mx-auto bg-slate-50 p-2 md:p-4 rounded-xl">
@@ -393,6 +339,19 @@ export default function Dashboard() {
             <button onClick={() => setActiveTab('atendimentos')} className={`px-6 py-3 font-bold text-sm rounded-t-lg border-t border-l border-r transition-all ${activeTab === 'atendimentos' ? 'bg-white text-blue-600 border-slate-200 -mb-px shadow-sm' : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200'}`}>Atendimentos</button>
             <button onClick={() => setActiveTab('demanda')} className={`px-6 py-3 font-bold text-sm rounded-t-lg border-t border-l border-r transition-all ${activeTab === 'demanda' ? 'bg-white text-blue-600 border-slate-200 -mb-px shadow-sm' : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200'}`}>Demanda Reprimida</button>
         </div>
+
+        {/* --- CONTEÚDO: DEMANDA REPRIMIDA (MODULARIZADO) --- */}
+        {activeTab === 'demanda' && (
+            demandData.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 animate-in fade-in">
+                    <FileSpreadsheet size={48} className="mx-auto text-slate-300 mb-4"/>
+                    <p className="text-slate-500 font-medium">Nenhum dado de demanda carregado.</p>
+                    <p className="text-sm text-slate-400">Faça upload de uma planilha do tipo "Demanda Reprimida" para visualizar.</p>
+                </div>
+            ) : (
+                <DemandDashboard demandData={demandData} />
+            )
+        )}
 
         {/* --- CONTEÚDO: ATENDIMENTOS --- */}
         {activeTab === 'atendimentos' && (
