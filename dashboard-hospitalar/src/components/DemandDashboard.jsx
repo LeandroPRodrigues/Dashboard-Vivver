@@ -18,10 +18,8 @@ export const DemandDashboard = ({ demandData }) => {
     year: 'all', months: [], services: [], procedures: [], priorities: [], reqUnits: [] 
   });
   
-  // Guarda o ID do paciente selecionado com duplo clique
   const [selectedPatientId, setSelectedPatientId] = useState(null);
 
-  // Limpa o paciente selecionado se os filtros mudarem
   useEffect(() => { setSelectedPatientId(null); }, [filters]);
 
   // --- OPÇÕES DE FILTROS ---
@@ -64,7 +62,6 @@ export const DemandDashboard = ({ demandData }) => {
       });
   }, [demandData, filters]);
 
-  // Pega apenas as solicitações do paciente selecionado
   const selectedPatientRequests = useMemo(() => {
       if (!selectedPatientId) return [];
       return filteredDemand.filter(req => req.patientId === selectedPatientId);
@@ -319,7 +316,6 @@ export const DemandDashboard = ({ demandData }) => {
                     <table className="w-full text-xs text-left text-slate-600">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
                             <tr>
-                                {/* NOVA COLUNA ADICIONADA AQUI */}
                                 <th className="px-6 py-3 font-bold">Data Solic.</th> 
                                 <th className="px-6 py-3 font-bold">Serviço</th>
                                 <th className="px-6 py-3 font-bold">Procedimento</th>
@@ -330,10 +326,14 @@ export const DemandDashboard = ({ demandData }) => {
                         <tbody className="divide-y divide-slate-100">
                             {selectedPatientRequests.map((req, i) => (
                                 <tr key={i} className="hover:bg-slate-50">
-                                    {/* DADO DA DATA INSERIDO AQUI */}
                                     <td className="px-6 py-3 font-medium text-slate-800">{req.reqDate || '-'}</td>
                                     <td className="px-6 py-3 font-medium text-slate-800">{req.serviceType || '-'}</td>
-                                    <td className="px-6 py-3 text-slate-600">{req.procedure || '-'}</td>
+                                    {/* A LÓGICA DO NOME DO CBO APLICADA AQUI */}
+                                    <td className="px-6 py-3 text-slate-600">
+                                        {String(req.serviceType).toUpperCase() === 'CONSULTA ESPECIALIZADA TFD' && req.cboName
+                                            ? `${req.procedure || '-'} - ${req.cboName}`
+                                            : req.procedure || '-'}
+                                    </td>
                                     <td className="px-6 py-3">
                                         <span className={`px-2 py-1 rounded text-[10px] font-bold ${String(req.priority).includes('P1') || String(req.priority).includes('P2') || String(req.priority).includes('SP') ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'}`}>
                                             {req.priority || 'N/C'}

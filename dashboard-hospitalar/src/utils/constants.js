@@ -48,11 +48,13 @@ export const DEMAND_ALIASES = {
   procedure: ['nome_procedimento'],
   execSpecialty: ['nome_especialidade_cbo_executante'],
   cid: ['codcid_justifica_solicitacao'],
-  serviceType: ['nome', 'Nome'], // <-- ALTERADO PARA LER A COLUNA 'nome' REAL
+  serviceType: ['nome', 'Nome'], 
   reqUnit: ['nom_und_sol'],
   refUnit: ['nom_und_ref'],
   area: ['codarea'],
   microarea: ['codmicroarea'],
   gender: ['indsexo'],
-  execUnit: ['nome_unidade_executante']
+  execUnit: ['nome_unidade_executante'],
+  // NOVA COLUNA ADICIONADA AQUI
+  cboName: ['nome_cbo_executante'] 
 };
