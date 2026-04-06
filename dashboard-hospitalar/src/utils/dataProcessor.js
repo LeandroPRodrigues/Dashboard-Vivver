@@ -27,9 +27,7 @@ const parseExcelDate = (dateVal) => {
         }
     }
     
-    // ========================================================
-    // CORREÇÃO GLOBAL: Se o ano for 1900, converte para 2024
-    // ========================================================
+    // Converte a data inválida de 1900 para 2024
     if (ano === '1900') {
         ano = '2024';
         if (dt) dt.setFullYear(2024);
@@ -117,13 +115,11 @@ export const processFiles = async (files) => {
                         rowObj.ano = parsedDate.ano;
                         rowObj.mes = parsedDate.mes;
                         
-                        // Reescreve a data bonitinha para a tabela (já com 2024 caso fosse 1900)
                         const d = String(parsedDate.dt.getDate()).padStart(2, '0');
                         const m = String(parsedDate.dt.getMonth() + 1).padStart(2, '0');
                         const y = parsedDate.dt.getFullYear();
                         rowObj.reqDate = `${d}/${m}/${y}`;
                         
-                        // Cálculo correto dos dias
                         const diffTime = now - parsedDate.dt;
                         rowObj.waitDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24))); 
                         
@@ -199,16 +195,23 @@ export const processFiles = async (files) => {
                     baseRowObj.ageGroup = age <= 12 ? 'Criança (0-12)' : age <= 18 ? 'Adolescente (13-18)' : age <= 59 ? 'Adulto (19-59)' : 'Idoso (60+)';
                 }
 
-                const procCodes = baseRowObj.procCode ? String(baseRowObj.procCode).split('-') : [''];
+                // =========================================================
+                // A REGRA DE OURO RESTAURADA: 1 LINHA = 1 EVENTO
+                // =========================================================
+                const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null" && String(val).trim() !== '""';
                 
-                procCodes.forEach((code, index) => {
-                    const rowObj = { ...baseRowObj, procCode: code.trim() };
-                    const checkEvolucao = (val) => val && String(val).trim() !== "" && String(val).trim().toLowerCase() !== "null" && String(val).trim() !== '""';
-                    
-                    rowObj.hasEvolucao = index === 0 ? (checkEvolucao(rowObj.idEvolucao) || checkEvolucao(rowObj.dataEvolucao)) : false;
-                    
-                    newAtendimentos.push(rowObj);
-                });
+                // Se tiver conteúdo no id_evolucao, marca como Evolução
+                const isEvolucao = checkEvolucao(baseRowObj.idEvolucao);
+                baseRowObj.hasEvolucao = isEvolucao;
+
+                if (isEvolucao) {
+                    baseRowObj.procCode = '0301060029'; // Código de Observação (Evolução)
+                } else {
+                    baseRowObj.procCode = '0301060096'; // Código de 1º Atendimento
+                }
+
+                // Insere a linha EXATAMENTE uma vez. O "split" foi completamente banido.
+                newAtendimentos.push(baseRowObj);
             });
         }
     }
